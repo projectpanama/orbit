@@ -1,6 +1,11 @@
 [workspace]
 members = ["crates/*"]
 
+[workspace.dependencies.smithay]
+git = "https://github.com/Smithay/smithay"
+rev = "24647fc8d00131eb7f388efed26e35ea316b0018"
+default-features = false
+
 [package]
 name = "orbit"
 version = "0.1.0"
@@ -18,8 +23,7 @@ tracy-client = { version = "0.19.0", default-features = false }
 xcursor = "0.3.11"
 
 [dependencies.smithay]
-version = "0.7.0"
-default-features = false
+workspace = true
 features = [
     "backend_drm",
     "backend_egl",
@@ -33,6 +37,9 @@ features = [
     "renderer_multi",
     "wayland_frontend",
 ]
+
+[dev-dependencies]
+smithay = { workspace = true, features = ["renderer_pixman"] }
 
 [features]
 profile-with-tracy = ["tracy-client/default"]
