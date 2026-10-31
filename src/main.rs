@@ -23,6 +23,8 @@ fn run() -> anyhow::Result<()> {
     let display: Display<Orbit> = Display::new()?;
     let mut state = Orbit::new(&mut event_loop, display)?;
 
+    backend::winit::init(&mut event_loop, &mut state)?;
+
     state.listen()?;
 
     tracing::info!(socket = ?state.socket_name, "Orbit is listening");
