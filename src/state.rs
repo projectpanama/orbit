@@ -4,6 +4,7 @@ use std::{ffi::OsString, sync::Arc};
 
 use anyhow::Context;
 use smithay::{
+    delegate_dispatch2,
     reexports::{
         calloop::{EventLoop, LoopHandle},
         wayland_server::{
@@ -12,10 +13,12 @@ use smithay::{
         },
     },
     wayland::{
-        compositor::CompositorClientState, security_context::SecurityContext,
+        compositor::CompositorClientState, dmabuf::DmabufState, security_context::SecurityContext,
         socket::ListeningSocketSource,
     },
 };
+
+use crate::backend::Backend;
 
 /// Data associated with a wayland client that connects to Orbit.
 #[derive(Default)]
@@ -40,6 +43,8 @@ pub struct Orbit {
     pub socket_name: OsString,
     pub display_handle: DisplayHandle,
     pub loop_handle: LoopHandle<'static, Orbit>,
+    pub backend: Option<Backend>,
+    pub dmabuf_state: DmabufState,
 }
 
 impl Orbit {
@@ -53,6 +58,8 @@ impl Orbit {
             socket_name: OsString::new(),
             display_handle,
             loop_handle: event_loop.handle(),
+            backend: None,
+            dmabuf_state: DmabufState::new(),
         })
     }
 
@@ -75,3 +82,6 @@ impl Orbit {
 
     pub fn after_dispatch(&mut self) {}
 }
+
+// Routes every Wayland protocol Orbit implements to its handler trait.
+delegate_dispatch2!(Orbit);
