@@ -61,6 +61,8 @@ impl Orbit {
         self.arrange_outputs();
     }
 
+    pub fn remove_output(&mut self, output: &Output) {}
+
     fn arrange_outputs(&mut self) {
         let mut outputs: Vec<(&Output, &OutputState)> = self.outputs.iter().collect();
 
