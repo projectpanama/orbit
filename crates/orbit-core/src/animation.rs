@@ -1,3 +1,5 @@
+pub mod workspace;
+
 use std::time::Duration;
 
 /// Distance from the target and speed below which a spring is considered settled.
