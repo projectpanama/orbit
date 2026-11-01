@@ -6,9 +6,12 @@ use orbit_core::{
 };
 use smithay::{
     desktop::Window,
-    reexports::wayland_protocols::xdg::{
-        decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode,
-        shell::server::xdg_toplevel::State as XdgState,
+    reexports::{
+        wayland_protocols::xdg::{
+            decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode,
+            shell::server::xdg_toplevel::State as XdgState,
+        },
+        wayland_server::protocol::wl_surface::WlSurface,
     },
     utils::{Logical, Point, Rectangle, Size},
     wayland::{
@@ -79,6 +82,21 @@ pub struct WindowState {
 }
 
 impl Orbit {
+    pub fn window_for_surface(&self, surface: &WlSurface) -> Option<Window> {
+        let id = self.window_surfaces.get(surface)?;
+        self.windows.get(id).cloned()
+    }
+
+    pub fn focused_window(&self) -> Option<Window> {
+        let focus = self.seat.get_keyboard()?.current_focus()?;
+        self.window_for_surface(&focus)
+    }
+
+    pub fn content_geometry(&self, window: &Window) -> Option<Rectangle<i32, Logical>> {
+        let location = self.space.element_location(window)?;
+        Some(Rectangle::new(location, window.geometry().size))
+    }
+
     /// Returns the outer frame geometry for a mapped window.
     pub fn frame_geometry(&self, window: &Window) -> Option<Rectangle<i32, Logical>> {
         Some(frame_at(window, self.space.element_location(window)?))
