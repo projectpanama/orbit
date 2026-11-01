@@ -1,27 +1,36 @@
 mod input;
+mod output;
+
+use std::collections::HashMap;
 
 use serde::Deserialize;
 
 use input::RawInput;
+use output::RawOutput;
 
 pub use input::{AccelerationProfile, InputConfig, KeyboardConfig, PointerConfig};
+pub use output::{MAX_SCALE, MIN_SCALE, ModeSpec, OutputConfig, Transform};
 
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct RawConfig {
     #[serde(default)]
     input: RawInput,
+    #[serde(default)]
+    outputs: HashMap<String, RawOutput>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Config {
     pub input: InputConfig,
+    outputs: HashMap<String, OutputConfig>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             input: InputConfig::default(),
+            outputs: HashMap::new(),
         }
     }
 }
@@ -31,15 +40,30 @@ impl Config {
         Self::from_table(text.parse::<toml::Table>().map_err(|err| err.to_string())?)
     }
 
+    pub fn output(&self, connector: &str, description: &str) -> Option<&OutputConfig> {
+        self.outputs
+            .get(connector)
+            .or_else(|| self.outputs.get(description))
+    }
+
     pub(crate) fn from_table(table: toml::Table) -> Result<Self, String> {
         let raw: RawConfig = table
             .try_into()
             .map_err(|err: toml::de::Error| err.to_string())?;
 
-        let config = Self {
+        let mut config = Self {
             input: InputConfig::from_raw(raw.input),
             ..Self::default()
         };
+
+        for (name, raw_output) in raw.outputs {
+            match OutputConfig::from_raw(raw_output) {
+                Ok(output) => {
+                    config.outputs.insert(name, output);
+                }
+                Err(err) => tracing::warn!("ignoring output `{name}`: {err}"),
+            }
+        }
 
         Ok(config)
     }
