@@ -1,0 +1,10 @@
+[package]
+name = "orbit-config"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+orbit-core = { path = "../orbit-core" }
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.1.8"
+tracing = "0.1.44"

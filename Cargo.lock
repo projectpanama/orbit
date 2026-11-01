@@ -1021,6 +1021,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bitflags",
+ "orbit-config",
+ "orbit-core",
  "serde",
  "smithay",
  "toml",
@@ -1029,6 +1031,16 @@ dependencies = [
  "tracing-subscriber",
  "tracy-client",
  "xcursor",
+]
+
+[[package]]
+name = "orbit-config"
+version = "0.1.0"
+dependencies = [
+ "orbit-core",
+ "serde",
+ "toml",
+ "tracing",
 ]
 
 [[package]]
