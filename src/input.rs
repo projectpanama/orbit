@@ -1,1 +1,2 @@
-mod method;
+pub mod config;
+pub mod method;
