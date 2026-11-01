@@ -6,7 +6,10 @@ use std::{
 };
 
 use anyhow::Context;
-use orbit_core::{ids::WindowId, workspaces::Workspaces};
+use orbit_core::{
+    ids::{IdAllocator, WindowId},
+    workspaces::Workspaces,
+};
 use smithay::{
     desktop::{Space, Window},
     output::Output,
@@ -64,6 +67,7 @@ pub struct Orbit {
     pub frames: FrameSchedule,
     pub space: Space<Window>,
     pub space_refresh: SpaceRefresh,
+    pub output_ids: IdAllocator,
     pub windows: HashMap<WindowId, Window>,
     pub workspaces: Workspaces<WindowId>,
     pub dmabuf_state: DmabufState,
@@ -89,6 +93,7 @@ impl Orbit {
             frames: FrameSchedule::default(),
             space: Space::default(),
             space_refresh: Default::default(),
+            output_ids: IdAllocator::default(),
             windows: HashMap::new(),
             workspaces: Workspaces::default(),
             dmabuf_state: DmabufState::new(),
