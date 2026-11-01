@@ -1,3 +1,8 @@
+use smithay::{
+    reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason},
+    wayland::{compositor::CompositorClientState, security_context::SecurityContext},
+};
+
 /// Data associated with a wayland client that connects to Orbit.
 #[derive(Default)]
 pub struct ClientState {
