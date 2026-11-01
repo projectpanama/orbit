@@ -1,6 +1,11 @@
 mod backend;
+mod geometry;
 mod handlers;
+mod outputs;
+mod render;
 mod state;
+mod window;
+mod workspaces;
 
 use std::process::ExitCode;
 

@@ -1,24 +1,30 @@
-mod globals;
-
-use std::{ffi::OsString, sync::Arc};
+use std::{
+    collections::HashMap,
+    ffi::OsString,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use anyhow::Context;
+use orbit_core::{ids::WindowId, workspaces::Workspaces};
 use smithay::{
-    delegate_dispatch2,
+    desktop::{Space, Window},
+    output::Output,
     reexports::{
-        calloop::{EventLoop, LoopHandle},
+        calloop::{EventLoop, LoopHandle, LoopSignal},
         wayland_server::{
             Display, DisplayHandle,
             backend::{ClientData, ClientId, DisconnectReason},
         },
     },
+    utils::{Clock, Monotonic},
     wayland::{
         compositor::CompositorClientState, dmabuf::DmabufState, security_context::SecurityContext,
         socket::ListeningSocketSource,
     },
 };
 
-use crate::backend::Backend;
+use crate::{backend::Backend, outputs::OutputState, render::SpaceRefresh};
 
 /// Data associated with a wayland client that connects to Orbit.
 #[derive(Default)]
@@ -39,12 +45,29 @@ impl ClientData for ClientState {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct FrameSchedule {
+    pub renders_scheduled: bool,
+    pub cleanup_scheduled: bool,
+    pub queued_outputs: Vec<Output>,
+    pub frame_time: Duration,
+}
+
 pub struct Orbit {
+    pub start_time: Instant,
     pub socket_name: OsString,
     pub display_handle: DisplayHandle,
     pub loop_handle: LoopHandle<'static, Orbit>,
+    pub loop_signal: LoopSignal,
     pub backend: Option<Backend>,
+    pub outputs: HashMap<Output, OutputState>,
+    pub frames: FrameSchedule,
+    pub space: Space<Window>,
+    pub space_refresh: SpaceRefresh,
+    pub windows: HashMap<WindowId, Window>,
+    pub workspaces: Workspaces<WindowId>,
     pub dmabuf_state: DmabufState,
+    pub clock: Clock<Monotonic>,
 }
 
 impl Orbit {
@@ -52,14 +75,24 @@ impl Orbit {
         event_loop: &mut EventLoop<'static, Self>,
         display: Display<Self>,
     ) -> anyhow::Result<Self> {
+        let start_time = Instant::now();
         let display_handle = display.handle();
 
         Ok(Self {
+            start_time,
             socket_name: OsString::new(),
             display_handle,
             loop_handle: event_loop.handle(),
+            loop_signal: event_loop.get_signal(),
             backend: None,
+            outputs: HashMap::new(),
+            frames: FrameSchedule::default(),
+            space: Space::default(),
+            space_refresh: Default::default(),
+            windows: HashMap::new(),
+            workspaces: Workspaces::default(),
             dmabuf_state: DmabufState::new(),
+            clock: Clock::new(),
         })
     }
 
@@ -84,4 +117,4 @@ impl Orbit {
 }
 
 // Routes every Wayland protocol Orbit implements to its handler trait.
-delegate_dispatch2!(Orbit);
+smithay::delegate_dispatch2!(Orbit);
