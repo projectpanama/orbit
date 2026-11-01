@@ -11,7 +11,7 @@ use orbit_core::{
     workspaces::Workspaces,
 };
 use smithay::{
-    desktop::{Space, Window},
+    desktop::{PopupManager, Space, Window},
     output::Output,
     reexports::{
         calloop::{EventLoop, LoopHandle, LoopSignal},
@@ -70,6 +70,7 @@ pub struct Orbit {
     pub output_ids: IdAllocator,
     pub windows: HashMap<WindowId, Window>,
     pub workspaces: Workspaces<WindowId>,
+    pub popups: PopupManager,
     pub dmabuf_state: DmabufState,
     pub clock: Clock<Monotonic>,
 }
@@ -96,6 +97,7 @@ impl Orbit {
             output_ids: IdAllocator::default(),
             windows: HashMap::new(),
             workspaces: Workspaces::default(),
+            popups: PopupManager::default(),
             dmabuf_state: DmabufState::new(),
             clock: Clock::new(),
         })

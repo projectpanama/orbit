@@ -1,6 +1,7 @@
 mod backend;
 mod geometry;
 mod handlers;
+mod input;
 mod outputs;
 mod render;
 mod state;
