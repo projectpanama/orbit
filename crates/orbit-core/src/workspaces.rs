@@ -357,10 +357,209 @@ impl<W: Copy + Eq> Workspaces<W> {
             .retain(|workspace| !workspace.windows.is_empty());
     }
 
+    /// Moves a window to a workspace index on its current output.
+    ///
+    /// Returns visibility changes when the move crosses the active workspace.
+    pub fn move_window_to_index(&mut self, window: W, index: usize) -> Visibility<W> {
+        self.generation += 1;
+
+        let Some((out, from)) = self.locate(window) else {
+            return Visibility::default();
+        };
+
+        let out = &mut self.outputs[out];
+        let to = index.min(out.workspaces.len() - 1);
+
+        if to == from {
+            return Visibility::default();
+        }
+
+        out.workspaces[from].remove(window);
+        out.workspaces[to].windows.push(window);
+
+        let mut visibility = Visibility::default();
+
+        // If the window was on the active workspace, it should be hidden.
+        // If it was moved to the active workspace, it should be shown.
+        if from == out.active {
+            visibility.hide.push(window);
+        } else if to == out.active {
+            visibility.show.push(window);
+        }
+
+        out.normalize(&mut self.ids);
+        visibility
+    }
+
+    /// Moves a window to a workspace identified by `workspace`.
+    ///
+    /// Returns hide/show changes for moves between visible workspaces.
+    pub fn move_window_to_workspace(&mut self, window: W, workspace: WorkspaceId) -> Visibility<W> {
+        self.generation += 1;
+
+        let (Some((from_out, from_ws)), Some((to_out, to_ws))) =
+            (self.locate(window), self.locate_workspace(workspace))
+        else {
+            return Visibility::default();
+        };
+
+        if (from_out, from_ws) == (to_out, to_ws) {
+            return Visibility::default();
+        }
+
+        let was_visible = from_ws == self.outputs[from_out].active;
+        let is_visible = to_ws == self.outputs[to_out].active;
+
+        self.outputs[from_out].workspaces[from_ws].remove(window);
+        self.outputs[to_out].workspaces[to_ws].windows.push(window);
+        self.outputs[from_out].normalize(&mut self.ids);
+
+        if to_out != from_out {
+            self.outputs[to_out].normalize(&mut self.ids);
+        }
+
+        let mut visibility = Visibility::default();
+
+        if was_visible {
+            visibility.hide.push(window);
+        }
+
+        if is_visible {
+            visibility.show.push(window);
+        }
+
+        visibility
+    }
+
+    /// Moves a window to the active workspace on another output.
+    ///
+    /// Returns a show change when the window was previously on an inactive
+    /// workspace and becomes visible on the destination output.
+    pub fn move_window_to_output(&mut self, window: W, output: OutputId) -> Visibility<W> {
+        self.generation += 1;
+
+        let Some(to) = self.position(output) else {
+            return Visibility::default();
+        };
+
+        let Some((from, ws)) = self.locate(window) else {
+            return Visibility::default();
+        };
+
+        if from == to && ws == self.outputs[to].active {
+            return Visibility::default();
+        }
+
+        let was_visible = ws == self.outputs[from].active;
+
+        self.outputs[from].workspaces[ws].remove(window);
+        self.outputs[from].normalize(&mut self.ids);
+
+        let target = &mut self.outputs[to];
+        let active = target.active;
+        target.workspaces[active].windows.push(window);
+        target.normalize(&mut self.ids);
+
+        let mut visibility = Visibility::default();
+        if !was_visible {
+            visibility.show.push(window);
+        }
+        visibility
+    }
+
+    /// Records `window` as the most recently focused window in its workspace.
+    pub fn focused(&mut self, window: W) {
+        self.generation += 1;
+        if let Some((out, ws)) = self.locate(window) {
+            self.outputs[out].workspaces[ws].last_focused = Some(window);
+        }
+    }
+
+    /// Selects a usable focus target from the active workspace on `output`.
+    ///
+    /// The remembered focused window is preferred, followed by the most
+    /// recently added usable window.
+    pub fn focus_target(&self, output: OutputId, usable: impl Fn(W) -> bool) -> Option<W> {
+        let workspace = self.outputs[self.position(output)?].active();
+        workspace
+            .last_focused
+            .filter(|&w| usable(w))
+            .or_else(|| workspace.windows.iter().rev().copied().find(|&w| usable(w)))
+    }
+
+    /// Returns the mutation generation of this workspace model.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// Returns the active workspace identifier for `output`.
+    pub fn active(&self, output: OutputId) -> Option<WorkspaceId> {
+        self.position(output)
+            .map(|out| self.outputs[out].active().id)
+    }
+
+    /// Returns the active workspace index and total workspace count.
+    pub fn active_index(&self, output: OutputId) -> Option<(usize, usize)> {
+        let out = &self.outputs[self.position(output)?];
+        Some((out.active, out.workspaces.len()))
+    }
+
+    /// Returns windows on the active workspace for `output`.
+    pub fn active_windows(&self, output: OutputId) -> &[W] {
+        self.position(output)
+            .map_or(&[], |out| &self.outputs[out].active().windows)
+    }
+
+    /// Iterates over workspace identifiers belonging to `output`.
+    pub fn workspace_ids(&self, output: OutputId) -> impl Iterator<Item = WorkspaceId> + '_ {
+        self.position(output).into_iter().flat_map(|out| {
+            self.outputs[out]
+                .workspaces
+                .iter()
+                .map(|workspace| workspace.id)
+        })
+    }
+
+    /// Returns a workspace's index on an output.
+    pub fn index_of(&self, output: OutputId, workspace_id: WorkspaceId) -> Option<usize> {
+        self.workspace_ids(output).position(|id| id == workspace_id)
+    }
+
+    /// Iterates over currently registered output identifiers.
+    pub fn output_ids(&self) -> impl Iterator<Item = OutputId> + '_ {
+        self.outputs.iter().map(|out| out.output)
+    }
+
+    /// Finds the output and index containing a workspace.
+    pub fn find_workspace(&self, workspace_id: WorkspaceId) -> Option<(OutputId, usize)> {
+        let (out, ws) = self.locate_workspace(workspace_id)?;
+        Some((self.outputs[out].output, ws))
+    }
+
+    /// Returns windows assigned to a workspace.
+    pub fn windows_of(&self, workspace_id: WorkspaceId) -> &[W] {
+        self.outputs
+            .iter()
+            .flat_map(|out| &out.workspaces)
+            .find(|workspace| workspace.id == workspace_id)
+            .map_or(&[], |workspace| &workspace.windows)
+    }
+
+    /// Returns the output containing `window`.
+    pub fn output_of(&self, window: W) -> Option<OutputId> {
+        self.locate(window).map(|(out, _)| self.outputs[out].output)
+    }
+
     /// Returns the workspace identifier and index containing `window`.
     pub fn workspace_of(&self, window: W) -> Option<(WorkspaceId, usize)> {
         let (out, ws) = self.locate(window)?;
         Some((self.outputs[out].workspaces[ws].id, ws))
+    }
+
+    /// Reports whether `window` belongs to an active workspace.
+    pub fn is_visible(&self, window: W) -> bool {
+        self.locate(window)
+            .is_some_and(|(out, ws)| self.outputs[out].active == ws)
     }
 
     /// Returns visible windows paired with their output identifiers.
@@ -390,6 +589,17 @@ impl<W: Copy + Eq> Workspaces<W> {
     /// Finds the internal index of an output.
     fn position(&self, output: OutputId) -> Option<usize> {
         self.outputs.iter().position(|out| out.output == output)
+    }
+
+    /// Finds internal output and workspace indices by workspace identifier.
+    fn locate_workspace(&self, workspace: WorkspaceId) -> Option<(usize, usize)> {
+        self.outputs.iter().enumerate().find_map(|(out, outputs)| {
+            outputs
+                .workspaces
+                .iter()
+                .position(|ws| ws.id == workspace)
+                .map(|ws| (out, ws))
+        })
     }
 
     /// Finds the workspace containing a window.
