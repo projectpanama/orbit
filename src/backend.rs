@@ -1,5 +1,7 @@
 mod dmabuf;
 
+#[cfg(test)]
+pub mod headless;
 pub mod winit;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
@@ -9,6 +11,8 @@ use crate::backend::winit::Winit;
 /// TODO: Implement TTY and Headless backends
 pub enum Backend {
     Winit(Box<Winit>),
+    #[cfg(test)]
+    Headless(Box<headless::Headless>),
 }
 
 impl Backend {
