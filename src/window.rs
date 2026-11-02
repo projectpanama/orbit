@@ -1,4 +1,7 @@
-use std::{cell::RefCell, time::Duration};
+pub mod decorations;
+pub mod grabs;
+
+use std::{cell::RefCell, sync::Arc, time::Duration};
 
 use orbit_core::{
     animation::{Animation, Timing},
@@ -6,6 +9,7 @@ use orbit_core::{
 };
 use smithay::{
     desktop::Window,
+    output::Output,
     reexports::{
         wayland_protocols::xdg::{
             decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode,
@@ -20,7 +24,13 @@ use smithay::{
     },
 };
 
-use crate::state::Orbit;
+use crate::{
+    geometry::{ToCore, ToSmithay},
+    state::Orbit,
+    window::decorations::{Decoration, DecorationStyle},
+};
+
+pub use orbit_core::layout::{Layout, Side};
 
 /// How small a window starts when it opens relative to its size.
 const OPEN_START_SCALE: f64 = 0.92;
@@ -75,10 +85,21 @@ impl OpenAnimation {
 pub struct WindowState {
     /// Set when the window is registered.
     pub id: Option<WindowId>,
+    /// While on a hidden workspace, where it was relative to its output's
+    /// top-left corner, and when it was hidden (for stacking order).
+    pub hidden_at: Option<(Point<i32, Logical>, u64)>,
+    /// The client asked for attention without being allowed to take focus.
+    pub urgent: bool,
+    /// Buffers for server-side decorations, created on first use.
+    pub decoration: Decoration,
+    /// How it's title bar looks like (set when the window is created).
+    pub style: Arc<DecorationStyle>,
     /// Current open animation state.
     pub open_animation: OpenAnimation,
     /// Saved content position and state generation while minimized.
     minimized: Option<(Point<i32, Logical>, u64)>,
+    /// The side to which the window is tiled, if it is tiled.
+    tiled: Option<Side>,
 }
 
 impl Orbit {
@@ -100,6 +121,42 @@ impl Orbit {
     /// Returns the outer frame geometry for a mapped window.
     pub fn frame_geometry(&self, window: &Window) -> Option<Rectangle<i32, Logical>> {
         Some(frame_at(window, self.space.element_location(window)?))
+    }
+
+    pub fn layout(window: &Window) -> Layout {
+        let Some(toplevel) = window.toplevel() else {
+            return Layout::Floating;
+        };
+        if has_state(toplevel, XdgState::Maximized) {
+            return Layout::Maximized;
+        }
+        match with_window_state(window, |state| state.tiled) {
+            Some(side) => Layout::Tiled(side),
+            None => Layout::Floating,
+        }
+    }
+
+    /// The frame area `layout` gives `window` on its output.
+    pub fn layout_area(&self, window: &Window, layout: Layout) -> Option<Rectangle<i32, Logical>> {
+        let output = self.window_output(window)?;
+        self.layout_area_on(&output, window, layout)
+    }
+
+    /// The frame area `layout` would give `window` on `output`.
+    pub fn layout_area_on(
+        &self,
+        output: &Output,
+        window: &Window,
+        layout: Layout,
+    ) -> Option<Rectangle<i32, Logical>> {
+        // Fullscreen covers the whole output and everything else stays clear
+        // of the space panels reserve.
+        let output = if is_fullscreen(window) {
+            self.space.output_geometry(output)?
+        } else {
+            self.usable_geometry(output)?
+        };
+        layout.area(output.to_core()).map(ToSmithay::to_smithay)
     }
 }
 
