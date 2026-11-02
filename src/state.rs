@@ -37,7 +37,7 @@ use smithay::{
 use crate::{
     backend::Backend,
     outputs::OutputState,
-    protocols::output_management::OutputManagementState,
+    protocols::{DesktopProtocols, output_management::OutputManagementState},
     render::SpaceRefresh,
     shell::lock::SessionLock,
     state::{client::ClientState, frame::FrameSchedule, input::InputState},
@@ -67,6 +67,7 @@ pub struct Orbit {
     pub space: Space<Window>,
     pub space_refresh: SpaceRefresh,
     pub layer_shell_state: WlrLayerShellState,
+    pub desktop: DesktopProtocols,
     pub output_ids: IdAllocator,
     pub outputs: HashMap<Output, OutputState>,
     pub focused_output: Option<OutputId>,
@@ -104,6 +105,8 @@ impl Orbit {
             &display_handle,
             crate::protocols::privileged,
         );
+
+        let desktop = DesktopProtocols::new(&display_handle, config.desktop_integration);
 
         let output_management =
             OutputManagementState::new(&display_handle, config.desktop_integration);
@@ -158,6 +161,7 @@ impl Orbit {
             space: Space::default(),
             space_refresh: Default::default(),
             layer_shell_state,
+            desktop,
             output_ids: IdAllocator::default(),
             outputs: HashMap::new(),
             focused_output: None,
