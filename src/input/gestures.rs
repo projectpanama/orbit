@@ -10,10 +10,10 @@ use crate::{state::Orbit, workspaces::WorkspaceTarget};
 
 /// Finger travel, in libinput units, that moves one workspace at sensitivity 1.
 const SWIPE_DISTANCE: f64 = 400.0;
-/// Idle time after which a scroll swipe ends when no new event arrives.
+/// Idle time after which a scroll workspace_swipe ends when no new event arrives.
 const SCROLL_IDLE_END: Duration = Duration::from_millis(150);
 
-/// Input source that started a workspace swipe.
+/// Input source that started a workspace workspace_swipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SwipeSource {
     /// Direct touchpad gesture input.
@@ -22,12 +22,12 @@ pub enum SwipeSource {
     Scroll,
 }
 
-/// State for a workspace swipe currently in progress.
+/// State for a workspace workspace_swipe currently in progress.
 #[derive(Debug)]
-pub struct Swipe {
+pub struct WorkspaceSwipe {
     /// Output whose workspace strip is being dragged.
     pub output: OutputId,
-    /// Input source that started the swipe.
+    /// Input source that started the workspace_swipe.
     pub source: SwipeSource,
     /// Recent movement samples used to project release velocity.
     tracker: VelocityTracker,
@@ -38,12 +38,12 @@ pub struct Swipe {
 }
 
 impl Orbit {
-    /// Starts a swipe on the output under the pointer.
+    /// Starts a workspace_swipe on the output under the pointer.
     ///
-    /// Returns `false` when swipes are disabled, another swipe is active, no
+    /// Returns `false` when swipes are disabled, another workspace_swipe is active, no
     /// output is active, or the pointer is currently grabbed.
     pub fn swipe_begin(&mut self, source: SwipeSource) -> bool {
-        if !self.config.workspace_swipe.enabled || self.input.swipe.is_some() {
+        if !self.config.workspace_swipe.enabled || self.input.workspace_swipe.is_some() {
             return false;
         }
         if self
@@ -77,7 +77,7 @@ impl Orbit {
 
         state.workspace_slide = Some(slide);
 
-        self.input.swipe = Some(Swipe {
+        self.input.workspace_swipe = Some(WorkspaceSwipe {
             output: id,
             source,
             tracker: VelocityTracker::default(),
@@ -85,9 +85,9 @@ impl Orbit {
             events: 0,
         });
 
-        // Where the swipe lands is where keyboard actions go next.
+        // Where the workspace_swipe lands is where keyboard actions go next.
         self.set_focused_output(&output);
-        tracing::debug!(output = %output.name(), ?source, "workspace swipe started");
+        tracing::debug!(output = %output.name(), ?source, "workspace workspace_swipe started");
         self.queue_redraw(&output);
         true
     }
@@ -97,12 +97,12 @@ impl Orbit {
     /// Positive `dx` means movement to the right while negative movement
     /// reveals the workspace on the right.
     pub fn swipe_update(&mut self, dx: f64) {
-        let Some(swipe) = &self.input.swipe else {
+        let Some(workspace_swipe) = &self.input.workspace_swipe else {
             return;
         };
-        let Some(output) = self.output_by_id(swipe.output) else {
+        let Some(output) = self.output_by_id(workspace_swipe.output) else {
             // Its output went away.
-            self.input.swipe = None;
+            self.input.workspace_swipe = None;
             return;
         };
         let slots = -dx * self.config.workspace_swipe.sensitivity / SWIPE_DISTANCE;
@@ -111,21 +111,21 @@ impl Orbit {
             .get_mut(&output)
             .and_then(|state| state.workspace_slide.as_mut())
         else {
-            self.input.swipe = None;
+            self.input.workspace_swipe = None;
             return;
         };
         slide.drag(slots);
         let now = Duration::from(self.clock.now());
-        if let Some(swipe) = &mut self.input.swipe {
-            swipe.tracker.push(now, slots);
-            swipe.last_event = now;
+        if let Some(workspace_swipe) = &mut self.input.workspace_swipe {
+            workspace_swipe.tracker.push(now, slots);
+            workspace_swipe.last_event = now;
         }
         self.queue_redraw(&output);
     }
 
-    /// Ends the swipe and settles on a workspace.
+    /// Ends the workspace_swipe and settles on a workspace.
     ///
-    /// A cancelled swipe returns toward its starting workspace.
+    /// A cancelled workspace_swipe returns toward its starting workspace.
     pub fn swipe_end(&mut self, cancelled: bool) {
         let now = Duration::from(self.clock.now());
         self.finish_swipe(cancelled, now);
@@ -141,7 +141,12 @@ impl Orbit {
         vertical: Option<f64>,
         mod_held: bool,
     ) -> bool {
-        match self.input.swipe.as_ref().map(|swipe| swipe.source) {
+        match self
+            .input
+            .workspace_swipe
+            .as_ref()
+            .map(|workspace_swipe| workspace_swipe.source)
+        {
             Some(SwipeSource::Touchpad) => return false,
             Some(SwipeSource::Scroll) => {
                 match amount {
@@ -177,37 +182,37 @@ impl Orbit {
         true
     }
 
-    /// Ends a modifier-scroll swipe when its modifier is released.
+    /// Ends a modifier-scroll workspace_swipe when its modifier is released.
     pub fn swipe_mod_released(&mut self) {
         if self
             .input
-            .swipe
+            .workspace_swipe
             .as_ref()
-            .is_some_and(|swipe| swipe.source == SwipeSource::Scroll)
+            .is_some_and(|workspace_swipe| workspace_swipe.source == SwipeSource::Scroll)
         {
             self.swipe_end(false);
         }
     }
 
-    /// Arms a timer that ends the scroll swipe after an idle interval.
+    /// Arms a timer that ends the scroll workspace_swipe after an idle interval.
     ///
-    /// The event sequence ensures an older timer cannot end a newer swipe.
+    /// The event sequence ensures an older timer cannot end a newer workspace_swipe.
     fn arm_scroll_idle_end(&mut self) {
-        let Some(swipe) = &mut self.input.swipe else {
+        let Some(workspace_swipe) = &mut self.input.workspace_swipe else {
             return;
         };
 
-        swipe.events += 1;
-        let events = swipe.events;
+        workspace_swipe.events += 1;
+        let events = workspace_swipe.events;
         let timer = Timer::from_duration(SCROLL_IDLE_END);
 
         let inserted = self.loop_handle.insert_source(timer, move |_, _, state| {
-            if let Some(swipe) = &state.input.swipe
-                && swipe.source == SwipeSource::Scroll
-                && swipe.events == events
+            if let Some(workspace_swipe) = &state.input.workspace_swipe
+                && workspace_swipe.source == SwipeSource::Scroll
+                && workspace_swipe.events == events
             {
                 // Its speed is what it was when the scrolling stopped.
-                let last_event = swipe.last_event;
+                let last_event = workspace_swipe.last_event;
                 state.finish_swipe(false, last_event);
             }
             TimeoutAction::Drop
@@ -215,23 +220,23 @@ impl Orbit {
 
         if let Err(err) = inserted {
             // Without the timer it would only end on Mod release.
-            tracing::warn!(%err, "failed to schedule the end of a scroll swipe");
+            tracing::warn!(%err, "failed to schedule the end of a scroll workspace_swipe");
         }
     }
 
-    /// Completes a swipe using velocity measured at `velocity_at`.
+    /// Completes a workspace_swipe using velocity measured at `velocity_at`.
     fn finish_swipe(&mut self, cancelled: bool, velocity_at: Duration) {
-        let Some(swipe) = self.input.swipe.take() else {
+        let Some(workspace_swipe) = self.input.workspace_swipe.take() else {
             return;
         };
 
-        let Some(output) = self.output_by_id(swipe.output) else {
+        let Some(output) = self.output_by_id(workspace_swipe.output) else {
             return;
         };
 
         let timing = self.config.animations.workspace_switch;
         let now = self.next_frame_time(&output);
-        let velocity = swipe.tracker.velocity(velocity_at);
+        let velocity = workspace_swipe.tracker.velocity(velocity_at);
 
         let Some(slide) = self
             .outputs
@@ -248,14 +253,14 @@ impl Orbit {
             slide.release(velocity, now, timing)
         };
 
-        tracing::debug!(output = %output.name(), cancelled, velocity, "workspace swipe ended");
+        tracing::debug!(output = %output.name(), cancelled, velocity, "workspace workspace_swipe ended");
 
         // The slide is already heading there, therefore, this makes it the
         // logical state, which `animate_switch` leaves the slide alone for.
-        let active = self.workspaces.active(swipe.output);
+        let active = self.workspaces.active(workspace_swipe.output);
         if let Some(index) = target
             .filter(|&target| Some(target) != active)
-            .and_then(|target| self.workspaces.index_of(swipe.output, target))
+            .and_then(|target| self.workspaces.index_of(workspace_swipe.output, target))
         {
             self.switch_workspace(&output, WorkspaceTarget::Index(index));
         }
