@@ -1,6 +1,8 @@
+pub mod output_management;
+
 use smithay::reexports::wayland_server::Client;
 
-use crate::state::ClientState;
+use crate::state::client::ClientState;
 
 /// Returns whether `client` is trusted to access privileged, session-wide
 /// globals that can expose or control other clients or the session.
