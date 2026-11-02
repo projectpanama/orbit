@@ -1,4 +1,5 @@
 mod animation;
+mod decorations;
 mod gestures;
 mod input;
 mod output;
@@ -8,11 +9,13 @@ use std::collections::HashMap;
 use serde::Deserialize;
 
 use animation::RawAnimations;
+use decorations::RawDecorations;
 use gestures::RawGestures;
 use input::RawInput;
 use output::RawOutput;
 
 pub use animation::AnimationConfig;
+pub use decorations::{Button, DecorationColors, DecorationConfig, Rgba};
 pub use gestures::{OverviewSwipeConfig, WorkspaceSwipeConfig};
 pub use input::{AccelerationProfile, InputConfig, KeyboardConfig, PointerConfig};
 pub use output::{MAX_SCALE, MIN_SCALE, ModeSpec, OutputConfig, Transform};
@@ -47,6 +50,8 @@ struct RawConfig {
     #[serde(default)]
     overview: RawOverview,
     #[serde(default)]
+    decorations: RawDecorations,
+    #[serde(default)]
     input: RawInput,
     #[serde(default)]
     outputs: HashMap<String, RawOutput>,
@@ -64,6 +69,7 @@ pub struct Config {
     pub startup: Vec<Vec<String>>,
     pub desktop_integration: bool,
     pub overview_dim: f64,
+    pub decorations: DecorationConfig,
     pub input: InputConfig,
     pub workspace_swipe: WorkspaceSwipeConfig,
     pub overview_swipe: OverviewSwipeConfig,
@@ -77,6 +83,7 @@ impl Default for Config {
             startup: Vec::new(),
             desktop_integration: true,
             overview_dim: DEFAULT_OVERVIEW_DIM,
+            decorations: DecorationConfig::default(),
             input: InputConfig::default(),
             workspace_swipe: WorkspaceSwipeConfig::default(),
             overview_swipe: OverviewSwipeConfig::default(),
@@ -105,6 +112,7 @@ impl Config {
         let mut config = Self {
             desktop_integration: !raw.desktop_integration.off,
             overview_dim: overview_dim(raw.overview),
+            decorations: DecorationConfig::from_raw(raw.decorations),
             input: InputConfig::from_raw(raw.input),
             workspace_swipe: WorkspaceSwipeConfig::from_raw(raw.gestures.workspace_swipe),
             overview_swipe: OverviewSwipeConfig::from_raw(raw.gestures.overview_swipe),
@@ -141,5 +149,74 @@ fn overview_dim(raw: RawOverview) -> f64 {
             tracing::warn!("ignoring overview dim {d}: not 0..=1");
             DEFAULT_OVERVIEW_DIM
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[test]
+    fn parses_startup() {
+        let config = Config::parse(
+            r##"
+            [startup]
+            spawn = [["waybar"], [], ["swaybg", "-c", "#202020"]]
+            "##,
+        )
+        .unwrap();
+        assert_eq!(
+            config.startup,
+            vec![
+                vec!["waybar".to_string()],
+                vec!["swaybg".into(), "-c".into(), "#202020".into()],
+            ]
+        );
+        assert!(Config::default().startup.is_empty());
+        assert!(Config::default().desktop_integration);
+        assert!(
+            !Config::parse("[desktop-integration]\noff = true")
+                .unwrap()
+                .desktop_integration
+        );
+        assert!(Config::parse("[startup]\nexec = [[\"waybar\"]]").is_err());
+    }
+
+    #[test]
+    fn parses_overview_settings() {
+        let config = Config::parse(
+            r#"
+            [overview]
+            dim = 0.5
+            [animations.overview]
+            duration-ms = 200
+            [gestures.overview-swipe]
+            fingers = 3
+            "#,
+        )
+        .unwrap();
+        assert_eq!(config.overview_dim, 0.5);
+        assert_eq!(
+            config.animations.overview.duration,
+            Duration::from_millis(200)
+        );
+        assert_eq!(config.overview_swipe.fingers, 3);
+        let bad = Config::parse("[overview]\ndim = 4.0\n[gestures.overview-swipe]\nfingers = 9\n")
+            .unwrap();
+        assert_eq!(bad.overview_dim, DEFAULT_OVERVIEW_DIM);
+        assert_eq!(bad.overview_swipe.fingers, 4);
+        let off =
+            Config::parse("[gestures.overview-swipe]\noff = true\n[animations]\noff = true\n")
+                .unwrap();
+        assert!(!off.overview_swipe.enabled);
+        assert!(off.animations.overview.is_off());
+    }
+
+    #[test]
+    fn invalid_config_is_an_error() {
+        assert!(Config::parse("mod = \"hyper\"").is_err());
+        assert!(Config::parse("binds = 3").is_err());
     }
 }
