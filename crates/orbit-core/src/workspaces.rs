@@ -1,3 +1,5 @@
+use std::{collections::HashMap, hash::Hash};
+
 use crate::ids::{IdAllocator, OutputId, OutputKey, WorkspaceId};
 
 /// Describes windows that should be hidden and shown after a workspace change.
@@ -36,20 +38,20 @@ struct Workspace<W> {
     last_focused: Option<W>,
     /// Output this workspace was moved away from when that output was
     /// disconnected. Used to restore the workspace when the output returns.
-    parent: Option<OutputKey>,
+    home: Option<OutputKey>,
     /// Whether this workspace was active on its remembered output.
-    was_active_on_parent: bool,
+    was_active_on_home: bool,
 }
 
-impl<W: Copy + Eq> Workspace<W> {
+impl<W: Copy + Eq + Hash> Workspace<W> {
     /// Creates an empty workspace with a newly allocated identifier.
     fn new(ids: &mut IdAllocator) -> Self {
         Self {
             id: ids.allocate(),
             windows: Vec::new(),
             last_focused: None,
-            parent: None,
-            was_active_on_parent: false,
+            home: None,
+            was_active_on_home: false,
         }
     }
 
@@ -84,7 +86,7 @@ struct OutputWorkspaces<W> {
     active: usize,
 }
 
-impl<W: Copy + Eq> OutputWorkspaces<W> {
+impl<W: Copy + Eq + Hash> OutputWorkspaces<W> {
     /// Returns the currently active workspace.
     fn active(&self) -> &Workspace<W> {
         &self.workspaces[self.active]
@@ -159,6 +161,10 @@ pub struct Workspaces<W> {
     outputs: Vec<OutputWorkspaces<W>>,
     /// Workspaces waiting for an output to return or be added.
     orphans: Vec<Workspace<W>>,
+    /// The workspace each window is on, so finding a window doesn't
+    /// search every workspace. Workspaces change outputs and positions,
+    /// but a window only changes workspace by being moved.
+    homes: HashMap<W, WorkspaceId>,
     /// Counts changes to the workspace state, so observers can
     /// tell nothing changed without having to compare everything.
     generation: u64,
@@ -167,15 +173,16 @@ pub struct Workspaces<W> {
 impl<W> Default for Workspaces<W> {
     fn default() -> Self {
         Self {
+            ids: IdAllocator::default(),
             outputs: Vec::new(),
             orphans: Vec::new(),
-            ids: IdAllocator::default(),
+            homes: HashMap::new(),
             generation: 0,
         }
     }
 }
 
-impl<W: Copy + Eq> Workspaces<W> {
+impl<W: Copy + Eq + Hash> Workspaces<W> {
     /// Adds an output and restores workspaces remembered for its key.
     ///
     /// Returns the windows whose visibility changed as a result.
@@ -187,7 +194,7 @@ impl<W: Copy + Eq> Workspaces<W> {
         for other in &mut self.outputs {
             let mut index = 0;
             while index < other.workspaces.len() {
-                if other.workspaces[index].parent.as_ref() != Some(&key) {
+                if other.workspaces[index].home.as_ref() != Some(&key) {
                     index += 1;
                     continue;
                 }
@@ -207,7 +214,7 @@ impl<W: Copy + Eq> Workspaces<W> {
 
         let mut active = returning
             .iter()
-            .position(|workspace| workspace.was_active_on_parent)
+            .position(|workspace| workspace.was_active_on_home)
             .unwrap_or(0);
 
         if returning.is_empty() && !self.orphans.is_empty() {
@@ -218,9 +225,9 @@ impl<W: Copy + Eq> Workspaces<W> {
         returning.append(&mut self.orphans);
 
         for workspace in &mut returning {
-            if workspace.parent.as_ref() == Some(&key) {
-                workspace.parent = None;
-                workspace.was_active_on_parent = false;
+            if workspace.home.as_ref() == Some(&key) {
+                workspace.home = None;
+                workspace.was_active_on_home = false;
             }
         }
 
@@ -265,9 +272,9 @@ impl<W: Copy + Eq> Workspaces<W> {
             .filter(|(_, workspace)| !workspace.windows.is_empty())
             .map(|(index, mut workspace)| {
                 // A workspace that already came from elsewhere keeps its original home.
-                if workspace.parent.is_none() {
-                    workspace.parent = Some(key.clone());
-                    workspace.was_active_on_parent = index == active;
+                if workspace.home.is_none() {
+                    workspace.home = Some(key.clone());
+                    workspace.was_active_on_home = index == active;
                 }
                 workspace
             })
@@ -276,8 +283,8 @@ impl<W: Copy + Eq> Workspaces<W> {
         // If the target output is available, move the workspaces there; otherwise
         // they become orphans and can be restored when a matching output returns.
         match target.and_then(|target| self.position(target)) {
-            Some(target) => {
-                let target = &mut self.outputs[target];
+            Some(target_index) => {
+                let target = &mut self.outputs[target_index];
                 let at = target.workspaces.len() - 1;
                 if target.active >= at {
                     target.active += migrating.len();
@@ -318,14 +325,19 @@ impl<W: Copy + Eq> Workspaces<W> {
         self.generation += 1;
         match output.and_then(|output| self.position(output)) {
             Some(out) => {
-                let out = &mut self.outputs[out];
-                let active = out.active;
-                out.workspaces[active].windows.push(window);
-                out.normalize(&mut self.ids);
+                let output = &mut self.outputs[out];
+                let active = output.active;
+                output.workspaces[active].windows.push(window);
+                self.homes.insert(window, output.workspaces[active].id);
+                output.normalize(&mut self.ids);
             }
             None => {
                 // Not with workspaces waiting for a particular monitor.
-                let index = match self.orphans.iter().position(|ws| ws.parent.is_none()) {
+                let index = match self
+                    .orphans
+                    .iter()
+                    .position(|workspace| workspace.home.is_none())
+                {
                     Some(index) => index,
                     None => {
                         self.orphans.push(Workspace::new(&mut self.ids));
@@ -333,6 +345,7 @@ impl<W: Copy + Eq> Workspaces<W> {
                     }
                 };
                 self.orphans[index].windows.push(window);
+                self.homes.insert(window, self.orphans[index].id);
             }
         }
     }
@@ -340,15 +353,13 @@ impl<W: Copy + Eq> Workspaces<W> {
     /// Removes a window from whichever workspace contains it.
     pub fn remove_window(&mut self, window: W) {
         self.generation += 1;
-        for out in &mut self.outputs {
-            if out
-                .workspaces
-                .iter_mut()
-                .any(|workspace| workspace.remove(window))
-            {
-                out.normalize(&mut self.ids);
-                return;
-            }
+        let Some(home) = self.homes.remove(&window) else {
+            return;
+        };
+        if let Some((out, workspaces)) = self.locate_workspace(home) {
+            self.outputs[out].workspaces[workspaces].remove(window);
+            self.outputs[out].normalize(&mut self.ids);
+            return;
         }
         for workspace in &mut self.orphans {
             workspace.remove(window);
@@ -376,6 +387,7 @@ impl<W: Copy + Eq> Workspaces<W> {
 
         out.workspaces[from].remove(window);
         out.workspaces[to].windows.push(window);
+        self.homes.insert(window, out.workspaces[to].id);
 
         let mut visibility = Visibility::default();
 
@@ -412,6 +424,7 @@ impl<W: Copy + Eq> Workspaces<W> {
 
         self.outputs[from_out].workspaces[from_ws].remove(window);
         self.outputs[to_out].workspaces[to_ws].windows.push(window);
+        self.homes.insert(window, workspace);
         self.outputs[from_out].normalize(&mut self.ids);
 
         if to_out != from_out {
@@ -458,6 +471,8 @@ impl<W: Copy + Eq> Workspaces<W> {
         let target = &mut self.outputs[to];
         let active = target.active;
         target.workspaces[active].windows.push(window);
+
+        self.homes.insert(window, target.workspaces[active].id);
         target.normalize(&mut self.ids);
 
         let mut visibility = Visibility::default();
@@ -604,12 +619,382 @@ impl<W: Copy + Eq> Workspaces<W> {
 
     /// Finds the workspace containing a window.
     fn locate(&self, window: W) -> Option<(usize, usize)> {
-        self.outputs.iter().enumerate().find_map(|(out, outputs)| {
-            outputs
-                .workspaces
-                .iter()
-                .position(|workspace| workspace.windows.contains(&window))
-                .map(|ws| (out, ws))
-        })
+        self.locate_workspace(*self.homes.get(&window)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn outputs(n: usize) -> (Workspaces<u32>, Vec<OutputId>) {
+        let mut ids = IdAllocator::default();
+        let mut workspaces = Workspaces::default();
+        let outputs: Vec<OutputId> = (0..n)
+            .map(|i| {
+                let id = ids.allocate();
+                workspaces.add_output(id, OutputKey(format!("OUT-{i}")));
+                id
+            })
+            .collect();
+        (workspaces, outputs)
+    }
+
+    /// Puts `windows` on workspace `index` of `output`, leaving the view on
+    /// the first workspace.
+    fn fill(workspaces: &mut Workspaces<u32>, output: OutputId, index: usize, windows: &[u32]) {
+        for &window in windows {
+            workspaces.add_window(window, Some(output));
+            workspaces.move_window_to_index(window, index);
+        }
+    }
+
+    /// Checks the window index against the workspaces themselves.
+    fn assert_index_matches(ws: &Workspaces<u32>) {
+        let mut found = HashMap::new();
+        let all = ws
+            .outputs
+            .iter()
+            .flat_map(|out| &out.workspaces)
+            .chain(&ws.orphans);
+        for workspace in all {
+            for &window in &workspace.windows {
+                assert!(
+                    found.insert(window, workspace.id).is_none(),
+                    "{window} twice"
+                );
+            }
+        }
+        assert_eq!(found, ws.homes);
+    }
+
+    fn sorted(mut windows: Vec<u32>) -> Vec<u32> {
+        windows.sort_unstable();
+        windows
+    }
+
+    #[test]
+    fn switching_one_output_leaves_the_other_alone() {
+        let (mut ws, out) = outputs(2);
+        let (a, b) = (out[0], out[1]);
+        fill(&mut ws, a, 0, &[1]);
+        fill(&mut ws, a, 1, &[2]);
+        fill(&mut ws, b, 0, &[10]);
+        fill(&mut ws, b, 1, &[11]);
+        fill(&mut ws, b, 2, &[12]);
+        // A shows A1, B shows B3.
+        ws.switch_to(b, 2);
+        let b_active = ws.active(b);
+        assert_eq!(ws.active_index(a), Some((0, 3)));
+        assert_eq!(ws.active_index(b), Some((2, 4)));
+
+        // A → A2.
+        let change = ws.switch_to(a, 1);
+        assert_eq!(
+            change,
+            Visibility {
+                hide: vec![1],
+                show: vec![2]
+            }
+        );
+        assert_eq!(ws.active_index(a), Some((1, 3)));
+        assert_eq!(ws.active(b), b_active);
+        assert_eq!(ws.active_index(b), Some((2, 4)));
+        assert_eq!(ws.active_windows(b), &[12]);
+        assert!(ws.is_visible(12) && !ws.is_visible(10) && !ws.is_visible(11));
+    }
+
+    #[test]
+    fn there_is_always_one_trailing_empty_workspace() {
+        let (mut ws, out) = outputs(1);
+        let a = out[0];
+        assert_eq!(ws.active_index(a), Some((0, 1)));
+        ws.add_window(1, Some(a));
+        assert_eq!(ws.active_index(a), Some((0, 2)));
+        // Moving to the empty one makes another.
+        assert_eq!(
+            ws.move_window_to_index(1, 5),
+            Visibility {
+                hide: vec![1],
+                show: vec![]
+            }
+        );
+        // The view stays on the now-empty first workspace...
+        assert_eq!(ws.active_index(a), Some((0, 3)));
+        // ...which goes away once left.
+        ws.switch_to(a, 1);
+        assert_eq!(ws.active_index(a), Some((0, 2)));
+        assert_eq!(ws.active_windows(a), &[1]);
+    }
+
+    #[test]
+    fn switching_past_the_end_lands_on_the_empty_workspace() {
+        let (mut ws, out) = outputs(1);
+        let a = out[0];
+        fill(&mut ws, a, 0, &[1]);
+        ws.switch_to(a, 8);
+        assert_eq!(ws.active_index(a), Some((1, 2)));
+        assert!(ws.active_windows(a).is_empty());
+        ws.switch_by(a, 5);
+        assert_eq!(ws.active_index(a), Some((1, 2)));
+        ws.switch_by(a, -9);
+        assert_eq!(ws.active_index(a), Some((0, 2)));
+    }
+
+    #[test]
+    fn closing_the_last_window_of_a_hidden_workspace_removes_it() {
+        let (mut ws, out) = outputs(1);
+        let a = out[0];
+        fill(&mut ws, a, 0, &[1]);
+        fill(&mut ws, a, 1, &[2]);
+        assert_eq!(ws.active_index(a), Some((0, 3)));
+        ws.remove_window(2);
+        assert_eq!(ws.active_index(a), Some((0, 2)));
+        assert_eq!(ws.output_of(2), None);
+    }
+
+    #[test]
+    fn windows_move_between_workspaces_and_outputs() {
+        let (mut ws, out) = outputs(2);
+        let (a, b) = (out[0], out[1]);
+        ws.add_window(1, Some(a));
+        ws.add_window(2, Some(a));
+        // To workspace 2 on A: hidden, A still shows workspace 1.
+        ws.move_window_to_index(2, 1);
+        assert_eq!(ws.workspace_of(2).map(|(_, i)| i), Some(1));
+        assert!(!ws.is_visible(2));
+
+        // A visible window moving to B stays visible.
+        assert!(ws.move_window_to_output(1, b).is_empty());
+        assert_eq!(ws.output_of(1), Some(b));
+        assert!(ws.is_visible(1));
+        assert_eq!(ws.active_windows(b), &[1]);
+
+        // A hidden one is shown by the move.
+        assert_eq!(
+            ws.move_window_to_output(2, b),
+            Visibility {
+                hide: vec![],
+                show: vec![2]
+            }
+        );
+        assert_eq!(sorted(ws.active_windows(b).to_vec()), vec![1, 2]);
+        // A is back to one empty workspace.
+        assert_eq!(ws.active_index(a), Some((0, 1)));
+    }
+
+    #[test]
+    fn finds_workspaces_by_id() {
+        let (mut ws, out) = outputs(2);
+        let (a, b) = (out[0], out[1]);
+        fill(&mut ws, b, 1, &[1]);
+        let b2 = ws.workspace_ids(b).nth(1).unwrap();
+        assert_eq!(ws.find_workspace(b2), Some((b, 1)));
+        assert_eq!(ws.output_ids().collect::<Vec<_>>(), vec![a, b]);
+        // Gone once its last window leaves while it isn't shown.
+        ws.remove_window(1);
+        assert_eq!(ws.find_workspace(b2), None);
+    }
+
+    #[test]
+    fn moving_a_window_to_another_outputs_workspace_switches_nothing() {
+        let (mut ws, out) = outputs(2);
+        let (a, b) = (out[0], out[1]);
+        fill(&mut ws, a, 0, &[1]);
+        fill(&mut ws, a, 1, &[2]);
+        fill(&mut ws, b, 0, &[10]);
+        fill(&mut ws, b, 1, &[11]);
+        fill(&mut ws, b, 2, &[12]);
+        ws.switch_to(b, 2);
+        let (a_active, b_active) = (ws.active(a), ws.active(b));
+
+        // Shown on A, to B's hidden second workspace: hidden.
+        let b2 = ws.workspace_ids(b).nth(1).unwrap();
+        assert_eq!(
+            ws.move_window_to_workspace(1, b2),
+            Visibility {
+                hide: vec![1],
+                show: vec![]
+            }
+        );
+        assert_eq!(ws.workspace_of(1), Some((b2, 1)));
+        assert_eq!((ws.active(a), ws.active(b)), (a_active, b_active));
+
+        // Hidden on A, to the workspace B shows: shown there.
+        let shown = ws.active(b).unwrap();
+        assert_eq!(
+            ws.move_window_to_workspace(2, shown),
+            Visibility {
+                hide: vec![],
+                show: vec![2]
+            }
+        );
+        assert_eq!(ws.active(b), b_active);
+        assert_eq!(sorted(ws.active_windows(b).to_vec()), vec![2, 12]);
+
+        // Shown on B, to the workspace A shows: in both lists.
+        let a_shown = ws.active(a).unwrap();
+        assert_eq!(
+            ws.move_window_to_workspace(12, a_shown),
+            Visibility {
+                hide: vec![12],
+                show: vec![12]
+            }
+        );
+        assert_eq!(ws.active(b), b_active);
+        // Moving to where it already is changes nothing.
+        assert!(ws.move_window_to_workspace(12, a_shown).is_empty());
+    }
+
+    #[test]
+    fn focus_is_restored_when_switching_back() {
+        let (mut ws, out) = outputs(1);
+        let a = out[0];
+        fill(&mut ws, a, 0, &[1, 2, 3]);
+        ws.focused(2);
+        ws.switch_to(a, 1);
+        assert_eq!(ws.focus_target(a, |_| true), None);
+        ws.switch_to(a, 0);
+        assert_eq!(ws.focus_target(a, |_| true), Some(2));
+        // An unusable (e.g. minimized) one is skipped for the newest.
+        assert_eq!(ws.focus_target(a, |w| w != 2), Some(3));
+        ws.remove_window(2);
+        assert_eq!(ws.focus_target(a, |_| true), Some(3));
+    }
+
+    #[test]
+    fn unplugging_moves_workspaces_behind_the_target_without_switching_it() {
+        let (mut ws, out) = outputs(2);
+        let (a, b) = (out[0], out[1]);
+        fill(&mut ws, a, 0, &[1]);
+        fill(&mut ws, b, 0, &[10]);
+        fill(&mut ws, b, 1, &[11]);
+        ws.switch_to(b, 1);
+
+        let change = ws.remove_output(b, Some(a));
+        assert_eq!(
+            change,
+            Visibility {
+                hide: vec![11],
+                show: vec![]
+            }
+        );
+        // A: [1], [10], [11], empty; still showing [1].
+        assert_eq!(ws.active_index(a), Some((0, 4)));
+        assert_eq!(ws.active_windows(a), &[1]);
+        assert_eq!(ws.output_of(10), Some(a));
+        assert!(!ws.is_visible(10) && !ws.is_visible(11));
+    }
+
+    #[test]
+    fn replugging_brings_workspaces_back() {
+        let (mut ws, out) = outputs(2);
+        let (a, b) = (out[0], out[1]);
+        fill(&mut ws, a, 0, &[1]);
+        fill(&mut ws, b, 0, &[10]);
+        fill(&mut ws, b, 1, &[11]);
+        ws.switch_to(b, 1);
+        ws.remove_output(b, Some(a));
+        // On A, look at what came from B.
+        ws.switch_to(a, 2);
+        assert_eq!(ws.active_windows(a), &[11]);
+
+        let mut ids = IdAllocator::default();
+        let _: OutputId = ids.allocate();
+        let _: OutputId = ids.allocate();
+        let b2: OutputId = ids.allocate();
+        let change = ws.add_output(b2, OutputKey("OUT-1".into()));
+        // B comes back showing what it showed; A falls back to a neighbour.
+        assert_eq!(ws.active_windows(b2), &[11]);
+        assert_eq!(ws.active_index(b2), Some((1, 3)));
+        assert_eq!(ws.output_of(10), Some(b2));
+        assert_eq!(ws.active_index(a), Some((0, 2)));
+        assert_eq!(sorted(change.hide), vec![11]);
+        assert_eq!(sorted(change.show), vec![1, 11]);
+    }
+
+    #[test]
+    fn workspaces_survive_having_no_output() {
+        let (mut ws, out) = outputs(1);
+        let a = out[0];
+        fill(&mut ws, a, 0, &[1]);
+        fill(&mut ws, a, 1, &[2]);
+        assert_eq!(
+            ws.remove_output(a, None),
+            Visibility {
+                hide: vec![1],
+                show: vec![]
+            }
+        );
+        assert_eq!(ws.output_of(1), None);
+        // Windows opened meanwhile wait too.
+        ws.add_window(3, None);
+
+        let mut ids = IdAllocator::default();
+        let _: OutputId = ids.allocate();
+        let c: OutputId = ids.allocate();
+        let change = ws.add_output(c, OutputKey("OTHER".into()));
+        assert_eq!(change.show, vec![1]);
+        assert_eq!(ws.output_of(2), Some(c));
+        assert_eq!(ws.output_of(3), Some(c));
+        // Their home is still the old output: they go back when it does.
+        let d: OutputId = ids.allocate();
+        ws.add_output(d, OutputKey("OUT-0".into()));
+        assert_eq!(ws.output_of(1), Some(d));
+        assert_eq!(ws.output_of(2), Some(d));
+        assert_eq!(ws.output_of(3), Some(c));
+    }
+
+    #[test]
+    fn the_window_index_follows_every_change() {
+        let (mut ws, out) = outputs(2);
+        let (a, b) = (out[0], out[1]);
+        fill(&mut ws, a, 0, &[1, 2]);
+        fill(&mut ws, a, 1, &[3]);
+        fill(&mut ws, b, 0, &[10]);
+        assert_index_matches(&ws);
+        ws.move_window_to_output(2, b);
+        let b_shown = ws.active(b).unwrap();
+        ws.move_window_to_workspace(3, b_shown);
+        ws.move_window_to_index(10, 3);
+        assert_index_matches(&ws);
+        assert_eq!(ws.output_of(3), Some(b));
+
+        // Workspaces travel between outputs without their windows moving.
+        ws.remove_output(b, Some(a));
+        assert_index_matches(&ws);
+        assert_eq!(ws.output_of(10), Some(a));
+        ws.remove_output(a, None);
+        ws.add_window(4, None);
+        assert_index_matches(&ws);
+        assert_eq!(ws.output_of(1), None);
+
+        let mut ids = IdAllocator::default();
+        let _: OutputId = ids.allocate();
+        let _: OutputId = ids.allocate();
+        let c: OutputId = ids.allocate();
+        ws.add_output(c, OutputKey("OUT-0".into()));
+        assert_index_matches(&ws);
+        assert_eq!(ws.output_of(1), Some(c));
+
+        for window in [1, 2, 3, 4, 10, 42] {
+            ws.remove_window(window);
+            assert_index_matches(&ws);
+            assert_eq!(ws.output_of(window), None);
+        }
+    }
+
+    #[test]
+    fn unknown_outputs_and_windows_change_nothing() {
+        let (mut ws, out) = outputs(1);
+        let mut ids = IdAllocator::default();
+        let _: OutputId = ids.allocate();
+        let ghost: OutputId = ids.allocate();
+        assert!(ws.switch_to(ghost, 1).is_empty());
+        assert!(ws.remove_output(ghost, Some(out[0])).is_empty());
+        assert!(ws.move_window_to_index(42, 1).is_empty());
+        assert!(ws.move_window_to_output(42, out[0]).is_empty());
+        ws.remove_window(42);
+        assert_eq!(ws.active_index(out[0]), Some((0, 1)));
     }
 }
