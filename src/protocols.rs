@@ -2,6 +2,7 @@ pub mod ext_workspace;
 pub mod foreign_toplevel;
 pub mod output_management;
 pub mod security_context;
+pub mod toplevel_management;
 
 use std::collections::HashMap;
 
@@ -14,7 +15,7 @@ use smithay::{
     },
 };
 
-use self::ext_workspace::ExtWorkspaceState;
+use self::{ext_workspace::ExtWorkspaceState, toplevel_management::ToplevelManagerState};
 use crate::state::{Orbit, client::ClientState};
 
 pub struct DesktopProtocols {
@@ -29,6 +30,7 @@ pub struct DesktopProtocols {
     pub toplevels_dirty: bool,
     /// The state of the ext-workspace protocol.
     pub workspaces: ExtWorkspaceState,
+    pub toplevel_manager: ToplevelManagerState,
     /// The state of the security context protocol.
     pub security_context: SecurityContextState,
 }
@@ -45,6 +47,7 @@ impl DesktopProtocols {
             toplevel_handles: HashMap::new(),
             toplevels_dirty: true,
             workspaces: ExtWorkspaceState::new(display_handle, enabled),
+            toplevel_manager: ToplevelManagerState::new(display_handle, enabled),
             // A sandboxed client can't make itself another sandbox.
             security_context: SecurityContextState::new::<Orbit, _>(display_handle, privileged),
         }
