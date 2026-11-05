@@ -17,9 +17,8 @@ anyhow = "1.0.104"
 bitflags = "2.13.2"
 orbit-config = { path = "crates/orbit-config" }
 orbit-core = { path = "crates/orbit-core" }
-serde = { version = "1.0.229", features = ["derive"] }
+orbit-protocols = { path = "crates/orbit-protocols", features = ["server"] }
 tiny-skia = "0.12.0"
-toml = "1.1.6"
 tracing = { version = "0.1.44", features = ["max_level_debug", "release_max_level_info"] }
 tracing-journald = "0.3.2"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

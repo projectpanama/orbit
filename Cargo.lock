@@ -1107,10 +1107,9 @@ dependencies = [
  "bitflags",
  "orbit-config",
  "orbit-core",
- "serde",
+ "orbit-protocols",
  "smithay",
  "tiny-skia",
- "toml",
  "tracing",
  "tracing-journald",
  "tracing-subscriber",
@@ -1131,6 +1130,17 @@ dependencies = [
 [[package]]
 name = "orbit-core"
 version = "0.1.0"
+
+[[package]]
+name = "orbit-protocols"
+version = "0.1.0"
+dependencies = [
+ "wayland-backend",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-scanner",
+ "wayland-server",
+]
 
 [[package]]
 name = "owned_ttf_parser"

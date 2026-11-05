@@ -1,0 +1,15 @@
+[package]
+name = "orbit-protocols"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wayland-backend = "0.3.17"
+wayland-client = { version = "0.31.15", optional = true }
+wayland-protocols = { version = "0.32.13", features = ["staging"] }
+wayland-scanner = "0.31.11"
+wayland-server = { version = "0.31.14", optional = true }
+
+[features]
+client = ["dep:wayland-client", "wayland-protocols/client"]
+server = ["dep:wayland-server", "wayland-protocols/server"]
