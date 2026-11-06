@@ -1105,6 +1105,7 @@ dependencies = [
  "ab_glyph",
  "anyhow",
  "bitflags",
+ "libc",
  "orbit-config",
  "orbit-core",
  "orbit-protocols",

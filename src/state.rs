@@ -34,7 +34,7 @@ use smithay::{
     },
     utils::{Clock, Logical, Monotonic, Point},
     wayland::{
-        dmabuf::DmabufState, session_lock::SessionLockManagerState,
+        dmabuf::DmabufState, idle_notify::IdleNotifierState, session_lock::SessionLockManagerState,
         shell::wlr_layer::WlrLayerShellState, shm::ShmState, socket::ListeningSocketSource,
     },
 };
@@ -43,7 +43,7 @@ use crate::{
     backend::Backend,
     outputs::OutputState,
     protocols::{DesktopProtocols, output_management::OutputManagementState},
-    render::SpaceRefresh,
+    render::{Overlays, SpaceRefresh},
     shell::lock::SessionLock,
     state::{client::ClientState, frame::FrameSchedule, input::InputState},
     window::{
@@ -86,11 +86,14 @@ pub struct Orbit {
     pub workspaces: Workspaces<WindowId>,
     pub hide_stamp: u64,
     pub popups: PopupManager,
+    pub overlays: Overlays,
     pub shm_state: ShmState,
     pub dmabuf_state: DmabufState,
     pub clock: Clock<Monotonic>,
     pub session_lock: SessionLock,
     pub session_lock_state: SessionLockManagerState,
+    pub idle_notifier: IdleNotifierState<Self>,
+    pub idle_inhibitors: HashSet<WlSurface>,
     pub seat: Seat<Self>,
     pub seat_state: SeatState<Orbit>,
     pub input: InputState,
@@ -125,6 +128,8 @@ impl Orbit {
         let session_lock_state =
             SessionLockManagerState::new::<Self, _>(&display_handle, crate::protocols::privileged);
 
+        let idle_notifier = IdleNotifierState::new(&display_handle, event_loop.handle());
+
         let mut seat_state = SeatState::new();
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&display_handle, "seat0");
 
@@ -158,6 +163,8 @@ impl Orbit {
 
         let decoration_style = Arc::new(DecorationStyle::new(config.decorations.clone(), None));
 
+        Self::insert_display_source(display, event_loop)?;
+
         let mut font_loader = FontLoader::new(&event_loop.handle())?;
         font_loader.request(&config.decorations);
 
@@ -184,11 +191,14 @@ impl Orbit {
             workspaces: Workspaces::default(),
             hide_stamp: 0,
             popups: PopupManager::default(),
+            overlays: Overlays::default(),
             shm_state,
             dmabuf_state: DmabufState::new(),
             clock: Clock::new(),
             session_lock: SessionLock::default(),
             session_lock_state,
+            idle_notifier,
+            idle_inhibitors: HashSet::new(),
             seat,
             seat_state,
             input,
@@ -200,6 +210,7 @@ impl Orbit {
         })
     }
 
+    /// Opens an auto-named Wayland socket and accepts clients on it.
     pub fn listen(&mut self) -> anyhow::Result<()> {
         let listening_socket =
             ListeningSocketSource::new_auto().context("failed to create the Wayland socket")?;
@@ -217,15 +228,20 @@ impl Orbit {
         Ok(())
     }
 
+    /// Runs once per event loop iteration, after every event source and
+    /// idle callback (including renders). Sends clients everything queued
+    /// for them meanwhile.
     pub fn after_dispatch(&mut self) {
         self.refresh_desktop_protocols();
         self.refresh_output_management();
-
+        self.refresh_idle_inhibit();
         if let Err(err) = self.display_handle.flush_clients() {
             tracing::debug!(%err, "failed to flush clients");
         }
     }
 
+    /// Finds what is under `pos`, walking windows from the top down so a
+    /// higher window's surface wins over a lower window's title bar.
     pub fn hit_test(&self, pos: Point<f64, Logical>) -> Option<(Window, Hit)> {
         for window in self.space.elements().rev() {
             let Some(location) = self.space.element_location(window) else {
@@ -250,27 +266,38 @@ impl Orbit {
         None
     }
 
+    /// Spawns the `[startup]` commands from the config.
     pub fn spawn_startup(&self) {
         for command in &self.config.startup {
             self.spawn(command);
         }
     }
 
+    /// Spawns a client connected to Orbit rather than to the host.
     pub fn spawn(&self, command: &[String]) {
         let Some((program, args)) = command.split_first() else {
             return;
         };
         let mut command = Command::new(program);
         command.args(args).env("WAYLAND_DISPLAY", &self.socket_name);
+        // Orbit blocks SIGHUP for calloop, reset the inherited mask so clients
+        // start with no signals blocked.
+        // SAFETY: only async-signal-safe libc calls between fork and exec.
         unsafe {
             std::os::unix::process::CommandExt::pre_exec(&mut command, || {
                 let mut set: libc::sigset_t = std::mem::zeroed();
-                libc::sigemptyset(&mut set);
-                libc::pthread_sigmask(libc::SIG_SETMASK, &set, std::ptr::null_mut());
+                if libc::sigemptyset(&mut set) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if libc::sigprocmask(libc::SIG_SETMASK, &set, std::ptr::null_mut()) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
                 Ok(())
             });
         }
         if self.session.is_some() {
+            // Orbit is the session, not a window inside someone else's. A
+            // desktop started with Orbit (its session script) names itself.
             command.env("XDG_SESSION_TYPE", "wayland");
             if std::env::var_os("XDG_CURRENT_DESKTOP").is_none_or(|v| v.is_empty()) {
                 command.env("XDG_CURRENT_DESKTOP", "Orbit");
@@ -283,6 +310,9 @@ impl Orbit {
                 return;
             }
         };
+        // Reap the child when it exits so it doesn't linger as a zombie.
+        // The thread only waits, so a small stack does, a long session
+        // starts many of these.
         let reaper = std::thread::Builder::new()
             .name("orbit-reaper".into())
             .stack_size(REAPER_STACK_SIZE)
@@ -292,6 +322,7 @@ impl Orbit {
         }
     }
 
+    /// Dispatches client requests whenever the display's fd is readable.
     fn insert_display_source(
         display: Display<Self>,
         event_loop: &mut EventLoop<'static, Self>,
@@ -302,7 +333,7 @@ impl Orbit {
                 Generic::new(display, Interest::READ, Mode::Level),
                 |_, display, state| {
                     let _span = tracy_client::span!("dispatch_clients");
-                    // Safety: the display is never dropped while the source is registered.
+                    // SAFETY: the display is never dropped while the source is registered.
                     let result = unsafe { display.get_mut().dispatch_clients(state) };
                     // A misbehaving client is disconnected by wayland-server
                     // without an error here. What's left is Orbit's own
