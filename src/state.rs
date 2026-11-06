@@ -12,7 +12,7 @@ use std::{
 };
 
 use anyhow::Context;
-use orbit_config::Config;
+use orbit_config::{Config, ModKey};
 use orbit_core::{
     ids::{IdAllocator, OutputId, WindowId},
     workspaces::Workspaces,
@@ -45,7 +45,7 @@ use crate::{
     protocols::{DesktopProtocols, output_management::OutputManagementState},
     render::{Overlays, SpaceRefresh},
     shell::lock::SessionLock,
-    state::{client::ClientState, frame::FrameSchedule, input::InputState},
+    state::{client::ClientState, frame::FrameSchedule, globals::Globals, input::InputState},
     window::{
         self,
         decorations::{self, DecorationHit, DecorationStyle, FontLoader},
@@ -84,6 +84,7 @@ pub struct Orbit {
     pub windows: HashMap<WindowId, Window>,
     pub window_surfaces: HashMap<WlSurface, WindowId>,
     pub workspaces: Workspaces<WindowId>,
+    pub globals: Globals,
     pub hide_stamp: u64,
     pub popups: PopupManager,
     pub overlays: Overlays,
@@ -123,6 +124,8 @@ impl Orbit {
         let output_management =
             OutputManagementState::new(&display_handle, config.desktop_integration);
 
+        let globals = Globals::new(&display_handle);
+
         let shm_state = ShmState::new::<Self>(&display_handle, vec![]);
 
         let session_lock_state =
@@ -134,7 +137,9 @@ impl Orbit {
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&display_handle, "seat0");
 
         let input = InputState {
+            mod_key: config.mod_key.unwrap_or(ModKey::Super),
             workspace_swipe: None,
+            overview_swipe: None,
             suppressed_keys: HashSet::new(),
             last_titlebar_click: None,
             decoration_hover: None,
@@ -189,6 +194,7 @@ impl Orbit {
             windows: HashMap::new(),
             window_surfaces: HashMap::new(),
             workspaces: Workspaces::default(),
+            globals,
             hide_stamp: 0,
             popups: PopupManager::default(),
             overlays: Overlays::default(),

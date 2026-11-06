@@ -235,7 +235,7 @@ impl SessionLockHandler for Orbit {
             .unset_grab(self, SERIAL_COUNTER.next_serial(), time);
         self.keyboard.clone().unset_grab(self);
         self.input.workspace_swipe = None;
-        // TODO: handle overview once implemented (drop the overviews)
+        self.drop_overviews();
 
         let pending: Vec<Output> = self.outputs.keys().cloned().collect();
         self.session_lock.state = LockState::Locking {

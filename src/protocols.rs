@@ -1,6 +1,7 @@
 pub mod ext_workspace;
 pub mod foreign_toplevel;
 pub mod output_management;
+pub mod overview;
 pub mod security_context;
 pub mod toplevel_management;
 
@@ -15,7 +16,10 @@ use smithay::{
     },
 };
 
-use self::{ext_workspace::ExtWorkspaceState, toplevel_management::ToplevelManagerState};
+use self::{
+    ext_workspace::ExtWorkspaceState, overview::OverviewProtocolState,
+    toplevel_management::ToplevelManagerState,
+};
 use crate::state::{Orbit, client::ClientState};
 
 pub struct DesktopProtocols {
@@ -30,7 +34,10 @@ pub struct DesktopProtocols {
     pub toplevels_dirty: bool,
     /// The state of the ext-workspace protocol.
     pub workspaces: ExtWorkspaceState,
+    /// The state of the toplevel-management protocol.
     pub toplevel_manager: ToplevelManagerState,
+    /// The state of the overview protocol.
+    pub overview: OverviewProtocolState,
     /// The state of the security context protocol.
     pub security_context: SecurityContextState,
 }
@@ -48,6 +55,7 @@ impl DesktopProtocols {
             toplevels_dirty: true,
             workspaces: ExtWorkspaceState::new(display_handle, enabled),
             toplevel_manager: ToplevelManagerState::new(display_handle, enabled),
+            overview: OverviewProtocolState::new(display_handle, enabled),
             // A sandboxed client can't make itself another sandbox.
             security_context: SecurityContextState::new::<Orbit, _>(display_handle, privileged),
         }
@@ -62,6 +70,7 @@ impl Orbit {
             return;
         }
         self.refresh_foreign_toplevels();
+        self.refresh_toplevel_states();
         self.refresh_ext_workspaces();
     }
 }
