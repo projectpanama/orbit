@@ -8,3 +8,4 @@ orbit-core = { path = "../orbit-core" }
 serde = { version = "1.0.229", features = ["derive"] }
 toml = "1.1.8"
 tracing = "0.1.44"
+xkbcommon = { version = "0.9.0", default-features = false }
