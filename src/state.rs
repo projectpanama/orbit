@@ -1,10 +1,12 @@
 pub mod client;
 pub mod frame;
+pub mod globals;
 pub mod input;
 
 use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
+    process::Command,
     sync::Arc,
     time::Instant,
 };
@@ -16,6 +18,7 @@ use orbit_core::{
     workspaces::Workspaces,
 };
 use smithay::{
+    backend::session::libseat::LibSeatSession,
     desktop::{PopupManager, Space, Window, WindowSurfaceType},
     input::{
         Seat, SeatState,
@@ -24,13 +27,15 @@ use smithay::{
     },
     output::Output,
     reexports::{
-        calloop::{EventLoop, LoopHandle, LoopSignal},
+        calloop::{
+            EventLoop, Interest, LoopHandle, LoopSignal, Mode, PostAction, generic::Generic,
+        },
         wayland_server::{Display, DisplayHandle, protocol::wl_surface::WlSurface},
     },
     utils::{Clock, Logical, Monotonic, Point},
     wayland::{
         dmabuf::DmabufState, session_lock::SessionLockManagerState,
-        shell::wlr_layer::WlrLayerShellState, socket::ListeningSocketSource,
+        shell::wlr_layer::WlrLayerShellState, shm::ShmState, socket::ListeningSocketSource,
     },
 };
 
@@ -48,6 +53,8 @@ use crate::{
     },
 };
 
+const REAPER_STACK_SIZE: usize = 64 * 1024;
+
 /// What the pointer is over.
 pub enum Hit {
     /// A client surface and its location in global coordinates.
@@ -64,6 +71,7 @@ pub struct Orbit {
     pub loop_signal: LoopSignal,
     pub backend: Option<Backend>,
     pub frames: FrameSchedule,
+    pub session: Option<LibSeatSession>,
     pub space: Space<Window>,
     pub space_refresh: SpaceRefresh,
     pub layer_shell_state: WlrLayerShellState,
@@ -78,6 +86,7 @@ pub struct Orbit {
     pub workspaces: Workspaces<WindowId>,
     pub hide_stamp: u64,
     pub popups: PopupManager,
+    pub shm_state: ShmState,
     pub dmabuf_state: DmabufState,
     pub clock: Clock<Monotonic>,
     pub session_lock: SessionLock,
@@ -110,6 +119,8 @@ impl Orbit {
 
         let output_management =
             OutputManagementState::new(&display_handle, config.desktop_integration);
+
+        let shm_state = ShmState::new::<Self>(&display_handle, vec![]);
 
         let session_lock_state =
             SessionLockManagerState::new::<Self, _>(&display_handle, crate::protocols::privileged);
@@ -158,6 +169,7 @@ impl Orbit {
             loop_signal: event_loop.get_signal(),
             backend: None,
             frames: FrameSchedule::default(),
+            session: None,
             space: Space::default(),
             space_refresh: Default::default(),
             layer_shell_state,
@@ -172,6 +184,7 @@ impl Orbit {
             workspaces: Workspaces::default(),
             hide_stamp: 0,
             popups: PopupManager::default(),
+            shm_state,
             dmabuf_state: DmabufState::new(),
             clock: Clock::new(),
             session_lock: SessionLock::default(),
@@ -205,6 +218,9 @@ impl Orbit {
     }
 
     pub fn after_dispatch(&mut self) {
+        self.refresh_desktop_protocols();
+        self.refresh_output_management();
+
         if let Err(err) = self.display_handle.flush_clients() {
             tracing::debug!(%err, "failed to flush clients");
         }
@@ -232,6 +248,79 @@ impl Orbit {
             }
         }
         None
+    }
+
+    pub fn spawn_startup(&self) {
+        for command in &self.config.startup {
+            self.spawn(command);
+        }
+    }
+
+    pub fn spawn(&self, command: &[String]) {
+        let Some((program, args)) = command.split_first() else {
+            return;
+        };
+        let mut command = Command::new(program);
+        command.args(args).env("WAYLAND_DISPLAY", &self.socket_name);
+        unsafe {
+            std::os::unix::process::CommandExt::pre_exec(&mut command, || {
+                let mut set: libc::sigset_t = std::mem::zeroed();
+                libc::sigemptyset(&mut set);
+                libc::pthread_sigmask(libc::SIG_SETMASK, &set, std::ptr::null_mut());
+                Ok(())
+            });
+        }
+        if self.session.is_some() {
+            command.env("XDG_SESSION_TYPE", "wayland");
+            if std::env::var_os("XDG_CURRENT_DESKTOP").is_none_or(|v| v.is_empty()) {
+                command.env("XDG_CURRENT_DESKTOP", "Orbit");
+            }
+        }
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(err) => {
+                tracing::warn!(%program, %err, "failed to spawn client");
+                return;
+            }
+        };
+        let reaper = std::thread::Builder::new()
+            .name("orbit-reaper".into())
+            .stack_size(REAPER_STACK_SIZE)
+            .spawn(move || child.wait());
+        if let Err(err) = reaper {
+            tracing::warn!(%program, %err, "failed to start a thread to reap the client");
+        }
+    }
+
+    fn insert_display_source(
+        display: Display<Self>,
+        event_loop: &mut EventLoop<'static, Self>,
+    ) -> anyhow::Result<()> {
+        event_loop
+            .handle()
+            .insert_source(
+                Generic::new(display, Interest::READ, Mode::Level),
+                |_, display, state| {
+                    let _span = tracy_client::span!("dispatch_clients");
+                    // Safety: the display is never dropped while the source is registered.
+                    let result = unsafe { display.get_mut().dispatch_clients(state) };
+                    // A misbehaving client is disconnected by wayland-server
+                    // without an error here. What's left is Orbit's own
+                    // epoll failing, after which no client could be served.
+                    if let Err(err) = result
+                        && !matches!(
+                            err.kind(),
+                            std::io::ErrorKind::Interrupted | std::io::ErrorKind::WouldBlock
+                        )
+                    {
+                        tracing::error!(%err, "failed to dispatch clients; quitting");
+                        state.loop_signal.stop();
+                    }
+                    Ok(PostAction::Continue)
+                },
+            )
+            .context("failed to watch the Wayland display")?;
+        Ok(())
     }
 }
 
