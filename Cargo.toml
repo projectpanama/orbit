@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*"]
+members = ["crates/*", "tools/orbit-shell-debug"]
 
 [workspace.dependencies.smithay]
 git = "https://github.com/Smithay/smithay"

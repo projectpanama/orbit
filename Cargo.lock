@@ -1164,6 +1164,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "orbit-shell-debug"
+version = "0.1.0"
+dependencies = [
+ "orbit-protocols",
+ "wayland-client",
+ "wayland-protocols",
+]
+
+[[package]]
 name = "owned_ttf_parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
