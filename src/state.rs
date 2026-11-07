@@ -34,8 +34,9 @@ use smithay::{
     },
     utils::{Clock, Logical, Monotonic, Point},
     wayland::{
-        dmabuf::DmabufState, idle_notify::IdleNotifierState, session_lock::SessionLockManagerState,
-        shell::wlr_layer::WlrLayerShellState, shm::ShmState, socket::ListeningSocketSource,
+        compositor::CompositorState, dmabuf::DmabufState, idle_notify::IdleNotifierState,
+        session_lock::SessionLockManagerState, shell::wlr_layer::WlrLayerShellState, shm::ShmState,
+        socket::ListeningSocketSource,
     },
 };
 
@@ -74,6 +75,7 @@ pub struct Orbit {
     pub session: Option<LibSeatSession>,
     pub space: Space<Window>,
     pub space_refresh: SpaceRefresh,
+    pub compositor_state: CompositorState,
     pub layer_shell_state: WlrLayerShellState,
     pub desktop: DesktopProtocols,
     pub output_ids: IdAllocator,
@@ -114,6 +116,8 @@ impl Orbit {
     ) -> anyhow::Result<Self> {
         let start_time = Instant::now();
         let display_handle = display.handle();
+
+        let compositor_state = CompositorState::new::<Self>(&display_handle);
 
         let layer_shell_state = WlrLayerShellState::new_with_filter::<Self, _>(
             &display_handle,
@@ -187,6 +191,7 @@ impl Orbit {
             session: None,
             space: Space::default(),
             space_refresh: Default::default(),
+            compositor_state,
             layer_shell_state,
             desktop,
             output_ids: IdAllocator::default(),
