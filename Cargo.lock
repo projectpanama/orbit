@@ -1119,6 +1119,7 @@ dependencies = [
  "anyhow",
  "bitflags",
  "calloop",
+ "drm-ffi",
  "libc",
  "orbit-config",
  "orbit-core",
@@ -1129,6 +1130,10 @@ dependencies = [
  "tracing-journald",
  "tracing-subscriber",
  "tracy-client",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-protocols-misc",
+ "wayland-protocols-wlr",
  "xcursor",
 ]
 

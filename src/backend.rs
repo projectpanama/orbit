@@ -1,6 +1,8 @@
 pub mod dmabuf;
 #[cfg(test)]
 pub mod headless;
+pub mod monitors;
+pub mod tty;
 pub mod winit;
 
 use std::{fmt::Debug, time::Duration};
@@ -22,7 +24,7 @@ use smithay::{
     wayland::compositor::get_parent,
 };
 
-use crate::{backend::winit::Winit, state::Orbit};
+use crate::{backend::tty::Tty, backend::winit::Winit, state::Orbit};
 
 /// How far (logical pixels) a cursor image can reach from the pointer in
 /// any direction. This is generous for a large theme at a fractional scale.
@@ -61,8 +63,8 @@ impl FailedFrames {
 pub enum Backend {
     /// OpenGL rendering in a nested winit window.
     Winit(Box<Winit>),
-    /// TODO: Placeholder for a TTY backend reusing winit backend for now.
-    Tty(Box<Winit>),
+    /// OpenGL rendering on a TTY.
+    Tty(Box<Tty>),
     /// Test-only headless rendering backend.
     #[cfg(test)]
     Headless(Box<headless::Headless>),
@@ -76,8 +78,8 @@ impl Backend {
             _ => None,
         }
     }
-    /// TODO: (replace with actual TTY backend) Returns the TTY backend, if selected.
-    pub fn tty(&mut self) -> Option<&mut Winit> {
+    /// Returns the TTY backend, if selected.
+    pub fn tty(&mut self) -> Option<&mut Tty> {
         match self {
             Backend::Tty(tty) => Some(tty),
             _ => None,

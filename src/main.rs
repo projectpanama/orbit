@@ -74,7 +74,7 @@ fn run(
     if nested {
         backend::winit::init(&mut event_loop, &mut state)?;
     } else {
-        // TODO: Add support for TTY backend
+        backend::tty::init(&mut event_loop, &mut state)?;
     }
 
     state.watch_config(loader);

@@ -44,7 +44,13 @@ features = [
 ]
 
 [dev-dependencies]
+drm-ffi = "0.9.1"
+orbit-protocols = { path = "crates/orbit-protocols", features = ["client"] }
 smithay = { workspace = true, features = ["renderer_pixman"] }
+wayland-client = "0.31.15"
+wayland-protocols = { version = "0.32.13", features = ["client", "staging", "unstable"] }
+wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
+wayland-protocols-misc = { version = "0.3.12", features = ["client"] }
 
 [features]
 profile-with-tracy = ["tracy-client/default"]
