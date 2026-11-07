@@ -129,7 +129,10 @@ impl Orbit {
     /// Applies the input configuration to the keyboard and pointer devices.
     pub fn apply_input_config(&mut self) {
         self.apply_keyboard_config();
-        // TODO: TTY device configuration will be added when its backend is ready.
+        let input = self.config.input.clone();
+        if let Some(tty) = self.backend.as_mut().and_then(Backend::tty) {
+            tty.configure_devices(&input);
+        }
     }
 
     /// Schedules a debounced configuration reload.
