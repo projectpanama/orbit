@@ -317,7 +317,7 @@ impl Orbit {
 
     /// Changes an output's mode through the active backend.
     fn set_output_mode(&mut self, output: &Output, mode: Mode) -> Result<(), String> {
-        let _output = output.clone();
+        let output = output.clone();
         let result = self.with_backend(|backend, _orbit| match backend {
             Backend::Tty(tty) => tty.set_mode(&output, mode),
             Backend::Winit(_) => Err("the nested window's size is set by the host".to_string()),
@@ -332,7 +332,7 @@ impl Orbit {
 
     /// Enables or disables an output through the active backend.
     fn set_output_enabled(&mut self, name: &str, on: bool) -> Result<(), String> {
-        let _name = name.to_string();
+        let name = name.to_string();
         let result = self.with_backend(|backend, orbit| match backend {
             Backend::Tty(tty) => tty.set_enabled(orbit, &name, on),
             Backend::Winit(_) => Err("the nested window can't be turned off".to_string()),
