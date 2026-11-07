@@ -42,6 +42,7 @@ enum HostCursor {
 
 /// Errors that can occur while drawing or submitting a frame.
 #[derive(Debug)]
+#[expect(dead_code, reason = "only read through Debug, for the log")]
 enum DrawError {
     /// The renderer could not bind the host surface.
     Bind(SwapBuffersError),
@@ -68,6 +69,10 @@ pub struct Winit {
     /// Tracks damage for the output.
     damage_tracker: OutputDamageTracker,
     /// Dmabuf global used by compatible clients.
+    #[allow(
+        dead_code,
+        reason = "kept for the lifetime of the renderer it describes"
+    )]
     dmabuf_global: DmabufGlobal,
     /// Cursor currently shown by the host window.
     host_cursor: Option<HostCursor>,
