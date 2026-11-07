@@ -37,10 +37,12 @@ use smithay::{
         compositor::CompositorState,
         dmabuf::DmabufState,
         idle_notify::IdleNotifierState,
+        selection::{data_device::DataDeviceState, primary_selection::PrimarySelectionState},
         session_lock::SessionLockManagerState,
         shell::{wlr_layer::WlrLayerShellState, xdg::XdgShellState},
         shm::ShmState,
         socket::ListeningSocketSource,
+        xdg_activation::XdgActivationState,
     },
 };
 
@@ -58,6 +60,7 @@ use crate::{
     },
 };
 
+/// The stack size for threads that wait for spawned clients to exit.
 const REAPER_STACK_SIZE: usize = 64 * 1024;
 
 /// What the pointer is over.
@@ -81,6 +84,9 @@ pub struct Orbit {
     pub space_refresh: SpaceRefresh,
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
+    pub xdg_activation_state: XdgActivationState,
+    pub data_device_state: DataDeviceState,
+    pub primary_selection_state: PrimarySelectionState,
     pub layer_shell_state: WlrLayerShellState,
     pub desktop: DesktopProtocols,
     pub output_ids: IdAllocator,
@@ -125,6 +131,12 @@ impl Orbit {
         let compositor_state = CompositorState::new::<Self>(&display_handle);
 
         let xdg_shell_state = XdgShellState::new::<Self>(&display_handle);
+
+        let xdg_activation_state = XdgActivationState::new::<Self>(&display_handle);
+
+        let data_device_state = DataDeviceState::new::<Self>(&display_handle);
+
+        let primary_selection_state = PrimarySelectionState::new::<Self>(&display_handle);
 
         let layer_shell_state = WlrLayerShellState::new_with_filter::<Self, _>(
             &display_handle,
@@ -200,6 +212,9 @@ impl Orbit {
             space_refresh: Default::default(),
             compositor_state,
             xdg_shell_state,
+            xdg_activation_state,
+            data_device_state,
+            primary_selection_state,
             layer_shell_state,
             desktop,
             output_ids: IdAllocator::default(),
