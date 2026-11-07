@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="orbit_toplevel_management_v1">
+  <copyright>
+    Copyright © 2026 Melvin Otieno
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to
+    permit persons to whom the Software is furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice (including the
+    next paragraph) shall be included in all copies or substantial portions
+    of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="act on other clients' toplevels">
+    Lets a desktop shell (a dock, a taskbar, a workspace overview) act on
+    windows it doesn't own. It adds only the actions that no standard
+    protocol offers, and works on the objects of standard protocols:
+    toplevels are ext_foreign_toplevel_handle_v1 objects from
+    ext-foreign-toplevel-list-v1, and workspaces are ext_workspace_handle_v1
+    objects from ext-workspace-v1. The results of a request are observed
+    through those protocols (for example a workspace's active state), not
+    through this one.
+
+    This global is privileged: the compositor only advertises it to
+    clients it trusts, as it does ext-foreign-toplevel-list-v1 and
+    ext-workspace-v1.
+
+    Warning! The protocol described in this file is currently in the
+    testing phase. Backward compatible changes may be added together with
+    the corresponding interface version bump. Backward incompatible changes
+    can only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="orbit_toplevel_manager_v1" version="1">
+    <description summary="act on toplevels">
+      Requests take effect immediately, in the order they are sent; there
+      is no commit. A request naming a toplevel that has been closed, or a
+      workspace that has been removed, is ignored: either can happen at any
+      time, so this is not a protocol error.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Destroys the manager. Requests already sent are not undone.
+      </description>
+    </request>
+
+    <request name="activate">
+      <description summary="bring a toplevel to the user's attention and focus it">
+        Shows the workspace the toplevel is on (on its own output only;
+        other outputs keep the workspace they show), restores it if it is
+        minimized, raises it and gives it keyboard focus on the seat.
+
+        The compositor may keep keyboard focus elsewhere when something has
+        to keep it, for example a lock screen or a launcher holding the
+        keyboard exclusively; the toplevel then gets it once that ends.
+      </description>
+      <arg name="toplevel" type="object" interface="ext_foreign_toplevel_handle_v1"/>
+      <arg name="seat" type="object" interface="wl_seat"/>
+    </request>
+
+    <request name="move_to_workspace">
+      <description summary="move a toplevel to a workspace">
+        Moves the toplevel to the workspace, which may be on another
+        output. No output changes the workspace it shows: the toplevel
+        disappears from view if the workspace isn't shown, and appears if
+        it is.
+      </description>
+      <arg name="toplevel" type="object" interface="ext_foreign_toplevel_handle_v1"/>
+      <arg name="workspace" type="object" interface="ext_workspace_handle_v1"/>
+    </request>
+
+    <request name="close">
+      <description summary="ask a toplevel to close">
+        Asks the toplevel's client to close it, as the close button of a
+        title bar does. The client decides: it may ask for confirmation
+        first, or not close at all.
+      </description>
+      <arg name="toplevel" type="object" interface="ext_foreign_toplevel_handle_v1"/>
+    </request>
+
+    <request name="set_minimized">
+      <description summary="minimize a toplevel">
+        Hides the toplevel until it is unminimized or activated. Keyboard
+        focus moves on as if the user had minimized it.
+      </description>
+      <arg name="toplevel" type="object" interface="ext_foreign_toplevel_handle_v1"/>
+    </request>
+
+    <request name="unset_minimized">
+      <description summary="restore a minimized toplevel">
+        Shows a minimized toplevel again where it was. It doesn't
+        necessarily get keyboard focus; use activate for that. Ignored if
+        the toplevel isn't minimized.
+      </description>
+      <arg name="toplevel" type="object" interface="ext_foreign_toplevel_handle_v1"/>
+    </request>
+
+    <request name="set_maximized">
+      <description summary="maximize a toplevel">
+        Maximizes the toplevel on its output.
+      </description>
+      <arg name="toplevel" type="object" interface="ext_foreign_toplevel_handle_v1"/>
+    </request>
+
+    <request name="unset_maximized">
+      <description summary="unmaximize a toplevel">
+        Returns a maximized toplevel to where it was before. Ignored if it
+        isn't maximized.
+      </description>
+      <arg name="toplevel" type="object" interface="ext_foreign_toplevel_handle_v1"/>
+    </request>
+
+    <request name="get_state">
+      <description summary="follow a toplevel's state">
+        Creates an object that reports the toplevel's state (focused,
+        minimized, maximized, fullscreen). If the toplevel has already
+        closed, the object never sends anything.
+      </description>
+      <arg name="id" type="new_id" interface="orbit_toplevel_state_v1"/>
+      <arg name="toplevel" type="object" interface="ext_foreign_toplevel_handle_v1"/>
+    </request>
+  </interface>
+
+  <interface name="orbit_toplevel_state_v1" version="1">
+    <description summary="a toplevel's state">
+      Reports the state of one toplevel. The first state event is sent
+      right after the object is created, and another one each time the
+      state changes. Once the toplevel closes, no more events are sent; the
+      object stays valid until it is destroyed.
+    </description>
+
+    <enum name="state">
+      <entry name="activated" value="0" summary="it has keyboard focus (at most one toplevel at a time)"/>
+      <entry name="minimized" value="1" summary="it is minimized"/>
+      <entry name="maximized" value="2" summary="it is maximized"/>
+      <entry name="fullscreen" value="3" summary="it is fullscreen"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="stop following the toplevel's state"/>
+    </request>
+
+    <event name="state">
+      <description summary="the toplevel's current state">
+        The complete current state: an array of 32-bit unsigned values of
+        the state enum, each at most once, in no particular order. An empty
+        array means none of them.
+      </description>
+      <arg name="state" type="array"/>
+    </event>
+  </interface>
+</protocol>
