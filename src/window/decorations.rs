@@ -42,6 +42,10 @@ const OUTLINE_WIDTH: i32 = 3;
 const URGENT_COLOR: [f32; 4] = [0.96, 0.55, 0.15, 1.0];
 
 /// A render element produced for a window's decorations.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "short-lived as each one is moved into the frame's element list right away"
+)]
 pub enum DecorationElement<R: Renderer> {
     /// Rasterized title bar.
     Bar(MemoryRenderBufferRenderElement<R>),
