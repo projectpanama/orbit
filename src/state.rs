@@ -44,7 +44,7 @@ use crate::{
     outputs::OutputState,
     protocols::{DesktopProtocols, output_management::OutputManagementState},
     render::{Overlays, SpaceRefresh},
-    shell::lock::SessionLock,
+    shell::{capture::CaptureState, lock::SessionLock},
     state::{client::ClientState, frame::FrameSchedule, globals::Globals, input::InputState},
     window::{
         self,
@@ -90,6 +90,7 @@ pub struct Orbit {
     pub overlays: Overlays,
     pub shm_state: ShmState,
     pub dmabuf_state: DmabufState,
+    pub capture: CaptureState,
     pub clock: Clock<Monotonic>,
     pub session_lock: SessionLock,
     pub session_lock_state: SessionLockManagerState,
@@ -127,6 +128,8 @@ impl Orbit {
         let globals = Globals::new(&display_handle);
 
         let shm_state = ShmState::new::<Self>(&display_handle, vec![]);
+
+        let capture = CaptureState::new(&display_handle, config.desktop_integration);
 
         let session_lock_state =
             SessionLockManagerState::new::<Self, _>(&display_handle, crate::protocols::privileged);
@@ -200,6 +203,7 @@ impl Orbit {
             overlays: Overlays::default(),
             shm_state,
             dmabuf_state: DmabufState::new(),
+            capture,
             clock: Clock::new(),
             session_lock: SessionLock::default(),
             session_lock_state,

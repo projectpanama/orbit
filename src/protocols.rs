@@ -72,6 +72,7 @@ impl Orbit {
         self.refresh_foreign_toplevels();
         self.refresh_toplevel_states();
         self.refresh_ext_workspaces();
+        self.stop_dead_captures();
     }
 }
 
