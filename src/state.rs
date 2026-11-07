@@ -34,8 +34,12 @@ use smithay::{
     },
     utils::{Clock, Logical, Monotonic, Point},
     wayland::{
-        compositor::CompositorState, dmabuf::DmabufState, idle_notify::IdleNotifierState,
-        session_lock::SessionLockManagerState, shell::wlr_layer::WlrLayerShellState, shm::ShmState,
+        compositor::CompositorState,
+        dmabuf::DmabufState,
+        idle_notify::IdleNotifierState,
+        session_lock::SessionLockManagerState,
+        shell::{wlr_layer::WlrLayerShellState, xdg::XdgShellState},
+        shm::ShmState,
         socket::ListeningSocketSource,
     },
 };
@@ -76,6 +80,7 @@ pub struct Orbit {
     pub space: Space<Window>,
     pub space_refresh: SpaceRefresh,
     pub compositor_state: CompositorState,
+    pub xdg_shell_state: XdgShellState,
     pub layer_shell_state: WlrLayerShellState,
     pub desktop: DesktopProtocols,
     pub output_ids: IdAllocator,
@@ -118,6 +123,8 @@ impl Orbit {
         let display_handle = display.handle();
 
         let compositor_state = CompositorState::new::<Self>(&display_handle);
+
+        let xdg_shell_state = XdgShellState::new::<Self>(&display_handle);
 
         let layer_shell_state = WlrLayerShellState::new_with_filter::<Self, _>(
             &display_handle,
@@ -192,6 +199,7 @@ impl Orbit {
             space: Space::default(),
             space_refresh: Default::default(),
             compositor_state,
+            xdg_shell_state,
             layer_shell_state,
             desktop,
             output_ids: IdAllocator::default(),
