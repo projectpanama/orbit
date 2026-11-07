@@ -1,7 +1,8 @@
+mod frame;
+mod globals;
+mod input;
+
 pub mod client;
-pub mod frame;
-pub mod globals;
-pub mod input;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -12,7 +13,7 @@ use std::{
 };
 
 use anyhow::Context;
-use orbit_config::{Config, ModKey};
+use orbit_config::{Config, ConfigLoader, ModKey};
 use orbit_core::{
     ids::{IdAllocator, OutputId, WindowId},
     workspaces::Workspaces,
@@ -28,7 +29,8 @@ use smithay::{
     output::Output,
     reexports::{
         calloop::{
-            EventLoop, Interest, LoopHandle, LoopSignal, Mode, PostAction, generic::Generic,
+            EventLoop, Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken,
+            generic::Generic,
         },
         wayland_server::{Display, DisplayHandle, protocol::wl_surface::WlSurface},
     },
@@ -69,6 +71,15 @@ pub enum Hit {
     Surface(WlSurface, Point<f64, Logical>),
     /// A window decoration and the hit location.
     Decoration(DecorationHit),
+}
+
+/// Reloading the config when its files change.
+#[derive(Default)]
+pub struct ConfigReload {
+    /// Loads the config again from the files it came from.
+    pub loader: Option<ConfigLoader>,
+    /// A reload waiting for the files to settle.
+    pub timer: Option<RegistrationToken>,
 }
 
 pub struct Orbit {
@@ -117,6 +128,7 @@ pub struct Orbit {
     pub config: Config,
     pub decoration_style: Arc<DecorationStyle>,
     pub font_loader: FontLoader,
+    pub config_reload: ConfigReload,
 }
 
 impl Orbit {
@@ -245,6 +257,7 @@ impl Orbit {
             config,
             decoration_style,
             font_loader,
+            config_reload: ConfigReload::default(),
         })
     }
 

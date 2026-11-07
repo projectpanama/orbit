@@ -6,6 +6,7 @@ mod input;
 mod logger;
 mod outputs;
 mod protocols;
+mod reload;
 mod render;
 mod shell;
 mod state;
@@ -29,7 +30,6 @@ fn main() -> ExitCode {
     };
 
     let source = ConfigSource::new(args.configs.clone());
-
     if args.check_config {
         return check_config(&source);
     }
@@ -77,7 +77,7 @@ fn run(
         // TODO: Add support for TTY backend
     }
 
-    // TODO: Watch for config changes and reload them.
+    state.watch_config(loader);
     state.listen()?;
 
     tracing::info!(socket = ?state.socket_name, "Orbit is listening");
