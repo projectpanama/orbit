@@ -16,7 +16,7 @@ use self::generated::{
 };
 use super::ext_workspace::WorkspaceData;
 
-const VERSION: u32 = 2;
+const VERSION: u32 = 1;
 
 /// A state resource and the last state bitset sent to its client.
 struct TrackedState {

@@ -61,7 +61,7 @@ fn bind_shell(fixture: &mut Fixture, client: &mut TestClient) -> Shell {
     let shell = Shell {
         workspaces: client.bind(&registry, "ext_workspace_manager_v1", 1, &qh),
         _toplevels: client.bind(&registry, "ext_foreign_toplevel_list_v1", 1, &qh),
-        manager: client.bind(&registry, "orbit_toplevel_manager_v1", 2, &qh),
+        manager: client.bind(&registry, "orbit_toplevel_manager_v1", 1, &qh),
     };
     fixture.roundtrip(client);
     shell
