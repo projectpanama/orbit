@@ -1,0 +1,151 @@
+# Orbit configuration.
+#
+# Orbit wrote this file on first start. Everything in it is commented out
+# at its default, so it changes nothing until you uncomment a line.
+# Changes apply live when you save (except [startup] and
+# [desktop-integration], which need a restart).
+#
+# This file is layered over /etc/orbit/config.toml when that exists:
+# tables merge key by key, other values replace the system ones.
+# Check this file without starting Orbit: orbit --check-config
+
+# Which key Mod means: auto (Alt when nested, Super otherwise), alt or super.
+# mod = "auto"
+
+# Started once, in this order, when Orbit starts.
+# [startup]
+# spawn = [["waybar"], ["mako"]]
+
+# Workspace, window-list and window-management protocols for desktop shells.
+# [desktop-integration]
+# off = false
+
+# Key bindings, merged over the defaults below. "none" removes a default.
+# Modifiers: Mod, Shift, Ctrl, Alt, Super. Keys use xkb names (Return, F1, a).
+# Mod+1..9 show workspace 1-9; Mod+Shift+1..9 move the window there.
+# [binds]
+# "Mod+Return" = { spawn = ["foot"] }
+# "Mod+Q" = "close-window"
+# "Mod+M" = "toggle-maximize"
+# "Mod+F" = "toggle-fullscreen"
+# "Mod+Tab" = "focus-next"
+# "Mod+H" = "minimize"
+# "Mod+Shift+H" = "restore-minimized"
+# "Mod+Shift+Left" = "tile-left"
+# "Mod+Shift+Right" = "tile-right"
+# "Mod+Left" = "move-left"
+# "Mod+Right" = "move-right"
+# "Mod+Up" = "move-up"
+# "Mod+Down" = "move-down"
+# "Mod+Ctrl+Right" = "grow-width"
+# "Mod+Ctrl+Left" = "shrink-width"
+# "Mod+Ctrl+Down" = "grow-height"
+# "Mod+Ctrl+Up" = "shrink-height"
+# "Mod+Page_Down" = "focus-workspace-next"
+# "Mod+Page_Up" = "focus-workspace-prev"
+# "Mod+Shift+Page_Down" = "move-to-workspace-next"
+# "Mod+Shift+Page_Up" = "move-to-workspace-prev"
+# "Mod+Comma" = "focus-output-left"
+# "Mod+Period" = "focus-output-right"
+# "Mod+Shift+Comma" = "move-to-output-left"
+# "Mod+Shift+Period" = "move-to-output-right"
+# "Mod+W" = "toggle-overview"
+# "Mod+Shift+E" = "quit"
+# "Mod+1" = { focus-workspace = 1 }
+# "Mod+Shift+1" = { move-to-workspace = 1 }
+# While the screen is locked, bindings are off except those allowed:
+# "XF86AudioRaiseVolume" = { spawn = ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "5%+"], allow-when-locked = true }
+
+# One section per monitor, named by connector (eDP-1, HDMI-A-1, DP-2) or by
+# "make model serial" to follow a monitor across ports. Orbit logs both for
+# each monitor on startup.
+# [outputs."DP-1"]
+# mode = "2560x1440@143.912"  # or "2560x1440" for its highest refresh rate
+# scale = 1.5                 # or "auto" (the default)
+# position = { x = 0, y = 0 } # top-left corner, in logical pixels
+# transform = "normal"        # 90 | 180 | 270 | flipped | flipped-90 | flipped-180 | flipped-270
+# off = false
+
+# [input.keyboard]
+# layout = ""          # xkb layouts, comma-separated ("us,de"); empty: $XKB_DEFAULT_LAYOUT or us
+# variant = ""
+# options = ""         # e.g. "grp:alt_shift_toggle,caps:escape"
+# model = ""
+# repeat-rate = 25     # per second, 1-200
+# repeat-delay = 600   # ms, 50-5000
+
+# Mouse and touchpad settings apply when Orbit runs as the session.
+# [input.mouse]
+# acceleration-speed = 0.0                  # -1..1
+# acceleration-profile = "adaptive"   # adaptive | flat
+# natural-scroll = false
+# left-handed = false
+
+# [input.touchpad]
+# acceleration-speed = 0.0
+# acceleration-profile = "adaptive"
+# natural-scroll = true
+# tap-to-click = true
+# disable-while-typing = true
+# two-finger-scroll = true     # false: edge scrolling
+
+# Curves: linear, ease-out-quad, ease-out-cubic, ease-out-expo.
+# [animations]
+# off = false        # true turns every animation off (reduced motion)
+# slowdown = 1.0     # multiplies every duration, 0.1 to 10
+
+# [animations.workspace-switch]
+# duration-ms = 250
+# curve = "ease-out-cubic"
+
+# [animations.window-open]
+# duration-ms = 150
+# curve = "ease-out-cubic"
+
+# [animations.overview]
+# duration-ms = 300
+# curve = "ease-out-cubic"
+
+# [overview]
+# dim = 0.3          # how dark the background gets, 0 to 1
+
+# [gestures.workspace-swipe]
+# off = false
+# fingers = 3        # 3 or 4
+# sensitivity = 1.0  # 0.1 to 10; higher needs less finger travel
+# mod-scroll = true  # Mod + two-finger horizontal scrolling swipes too
+
+# [gestures.overview-swipe]
+# off = false
+# fingers = 4        # 3 or 4, not the same as workspace-swipe's
+
+# Title bars, for windows that ask Orbit to draw them.
+# [decorations]
+# height = 28
+# corner-radius = 0
+# buttons = { left = [], right = ["minimize", "maximize", "close"] }
+# button-size = 14
+# button-gap = 8
+# button-margin = 8
+# button-radius = 7
+# button-glyphs = false
+# title = true
+# font = "sans-serif"   # a fontconfig pattern or a font file
+# font-size = 13
+# border = true
+
+# Colours are "#rrggbb" or "#rrggbbaa".
+# [decorations.colors]
+# active = "#33384a"
+# inactive = "#24262e"
+# border = "#00000040"
+# title = "#ffffffff"
+# title-inactive = "#ffffff99"
+# close = "#e3544f"
+# minimize = "#f2bf40"
+# maximize = "#5cbf66"
+# glyph = "#00000099"
+# glyph-inactive = "#00000066"
+# button-hover = "#ffffff26"
+# close-hover = "#e3544f"
+# close-hover-glyph = "#ffffff"
