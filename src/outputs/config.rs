@@ -99,7 +99,7 @@ impl Orbit {
         outputs.sort_by(|a, b| a.name.cmp(&b.name));
 
         let mut off = match &self.backend {
-            // TODO: add Tty support once implemented and sort this list.
+            Some(Backend::Tty(tty)) => tty.dark_heads(),
             #[cfg(test)]
             Some(Backend::Headless(h)) => h
                 .disabled
@@ -113,6 +113,7 @@ impl Orbit {
             _ => Vec::new(),
         };
 
+        off.sort_by(|a, b| a.name.cmp(&b.name));
         outputs.extend(off);
         outputs
     }
@@ -292,48 +293,6 @@ impl Orbit {
         Ok(())
     }
 
-    /// Changes an output's mode through the active backend.
-    fn set_output_mode(&mut self, output: &Output, mode: Mode) -> Result<(), String> {
-        let _output = output.clone();
-        let result = self.with_backend(|backend, _orbit| match backend {
-            // TODO: add Tty support once implemented. Likely to be the same function signature.
-            // Backend::Tty(tty) => tty.set_mode(&output, mode),
-            Backend::Winit(_) => Err("the nested window's size is set by the host".to_string()),
-            #[cfg(test)]
-            Backend::Headless(_) => {
-                output.change_current_state(Some(mode), None, None, None);
-                Ok(())
-            }
-        });
-        result.unwrap_or_else(|| Err("no backend".into()))
-    }
-
-    /// Enables or disables an output through the active backend.
-    fn set_output_enabled(&mut self, name: &str, on: bool) -> Result<(), String> {
-        let _name = name.to_string();
-        let result = self.with_backend(|backend, orbit| match backend {
-            // TODO: add Tty support once implemented. Not sure it will be exactly this function signature, but it will be similar.
-            // Backend::Tty(tty) => tty.set_enabled(orbit, &name, on),
-            Backend::Winit(_) => Err("the nested window can't be turned off".to_string()),
-            #[cfg(test)]
-            Backend::Headless(h) => {
-                if on {
-                    if let Some(i) = h.disabled.iter().position(|o| o.name() == name) {
-                        let output = h.disabled.remove(i);
-                        h.outputs.push(output.clone());
-                        orbit.add_output(&output, crate::outputs::OutputSetup::default());
-                    }
-                } else if let Some(output) = h.outputs.iter().find(|o| o.name() == name).cloned() {
-                    h.outputs.retain(|o| *o != output);
-                    h.disabled.push(output.clone());
-                    orbit.remove_output(&output);
-                }
-                Ok(())
-            }
-        });
-        result.unwrap_or_else(|| Err("no backend".into()))
-    }
-
     /// Discards runtime overrides and reapplies static `[outputs]` settings.
     ///
     /// Errors are logged per output so one invalid or unavailable monitor does
@@ -354,6 +313,46 @@ impl Orbit {
         }
         self.relayout_outputs();
         self.output_management.dirty = true;
+    }
+
+    /// Changes an output's mode through the active backend.
+    fn set_output_mode(&mut self, output: &Output, mode: Mode) -> Result<(), String> {
+        let _output = output.clone();
+        let result = self.with_backend(|backend, _orbit| match backend {
+            Backend::Tty(tty) => tty.set_mode(&output, mode),
+            Backend::Winit(_) => Err("the nested window's size is set by the host".to_string()),
+            #[cfg(test)]
+            Backend::Headless(_) => {
+                output.change_current_state(Some(mode), None, None, None);
+                Ok(())
+            }
+        });
+        result.unwrap_or_else(|| Err("no backend".into()))
+    }
+
+    /// Enables or disables an output through the active backend.
+    fn set_output_enabled(&mut self, name: &str, on: bool) -> Result<(), String> {
+        let _name = name.to_string();
+        let result = self.with_backend(|backend, orbit| match backend {
+            Backend::Tty(tty) => tty.set_enabled(orbit, &name, on),
+            Backend::Winit(_) => Err("the nested window can't be turned off".to_string()),
+            #[cfg(test)]
+            Backend::Headless(h) => {
+                if on {
+                    if let Some(i) = h.disabled.iter().position(|o| o.name() == name) {
+                        let output = h.disabled.remove(i);
+                        h.outputs.push(output.clone());
+                        orbit.add_output(&output, crate::outputs::OutputSetup::default());
+                    }
+                } else if let Some(output) = h.outputs.iter().find(|o| o.name() == name).cloned() {
+                    h.outputs.retain(|o| *o != output);
+                    h.disabled.push(output.clone());
+                    orbit.remove_output(&output);
+                }
+                Ok(())
+            }
+        });
+        result.unwrap_or_else(|| Err("no backend".into()))
     }
 }
 
