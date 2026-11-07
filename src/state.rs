@@ -108,6 +108,7 @@ pub struct Orbit {
     pub windows: HashMap<WindowId, Window>,
     pub window_surfaces: HashMap<WlSurface, WindowId>,
     pub workspaces: Workspaces<WindowId>,
+    #[expect(dead_code, reason = "only kept alive, for its globals")]
     pub globals: Globals,
     pub hide_stamp: u64,
     pub popups: PopupManager,

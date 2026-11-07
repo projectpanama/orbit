@@ -12,6 +12,7 @@ use smithay::{
 
 use crate::state::Orbit;
 
+#[expect(dead_code, reason = "only kept alive, never read")]
 pub struct Globals {
     output_manager: OutputManagerState,
     presentation: PresentationState,

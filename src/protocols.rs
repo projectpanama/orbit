@@ -39,6 +39,7 @@ pub struct DesktopProtocols {
     /// The state of the overview protocol.
     pub overview: OverviewProtocolState,
     /// The state of the security context protocol.
+    #[allow(dead_code, reason = "used by the protocol but not by Orbit itself")]
     pub security_context: SecurityContextState,
 }
 
