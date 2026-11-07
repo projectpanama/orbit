@@ -13,6 +13,9 @@ mod state;
 mod window;
 mod workspaces;
 
+#[cfg(test)]
+mod tests;
+
 use std::process::ExitCode;
 
 use orbit_config::{Config, ConfigLoader, ConfigSource};
